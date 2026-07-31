@@ -1,0 +1,106 @@
+package components
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ AdminNav(site config.Site) {
+	@HeaderCore(site) {
+		@ui.HeaderBrand(site.AppName, site.Title, "/")
+		@ui.HeaderNav(ui.AdminNavLinks...)
+		@ui.HeaderActions() {
+			@ui.ThemeToggle()
+			@ui.HeaderBurger()
+			<form
+				hx-post="/logout"
+				hx-swap="outerHTML"
+				hx-indicator="#desktop-logout-spinner"
+				hx-disabled-elt="button"
+				hx-confirm="Are you sure you want to logout?"
+				class="hidden md:inline-block"
+			>
+				@CSRF(site.CSRF)
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonDanger,
+					Size:    ui.ButtonLG,
+					Type:    "submit",
+					Loading: ui.LoadingConfig{
+						IndicatorID: "desktop-logout-spinner",
+					},
+				}) {
+					@icons.LogOut("w-5 h-5")
+					<span>Logout</span>
+				}
+			</form>
+		}
+		@ui.HeaderMobilePanel(ui.AdminNavLinks...) {
+			<form
+				hx-post="/logout"
+				hx-swap="outerHTML"
+				hx-indicator="#mobile-logout-spinner"
+				hx-disabled-elt="button"
+				hx-confirm="Are you sure you want to logout?"
+				class="mt-2 pt-2 border-t border-border"
+				@submit="mobileMenuOpen = false"
+			>
+				@CSRF(site.CSRF)
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonDanger,
+					Size:    ui.ButtonLG,
+					Type:    "submit",
+					FullW:   true,
+					Loading: ui.LoadingConfig{
+						IndicatorID: "mobile-logout-spinner"},
+				}) {
+					@icons.LogOut("w-5 h-5")
+					<span>Logout</span>
+				}
+			</form>
+		}
+	}
+}
+
+templ AsideAdminNav(site config.Site) {
+	@ui.NavDrawer(ui.NavDrawerProps{
+		Title:    site.AppName,
+		OpenExpr: "drawer",
+	}) {
+		// <div class="h-16 flex items-center gap-2 px-5 border-b border-border">
+		// 	@ui.HeaderBrand(site.AppName, site.Title, "/")
+		// </div>
+		@ui.DrawerNav(ui.AdminNavLinks...)
+		<div class="p-3 border-t border-border">
+			<div class="flex items-center gap-3 px-2 py-2">
+				<div class="w-9 h-9 rounded-full bg-accent text-accent-fg grid place-content-center font-semibold text-sm uppercase">
+					{ string(site.CurrentUser.Username[0]) + string(site.CurrentUser.Username[1]) }
+				</div>
+				<div class="min-w-0">
+					<p class="text-sm font-medium truncate">{ site.CurrentUser.Username }</p>
+					<p class="text-xs text-muted truncate">{ site.CurrentUser.Title }</p>
+				</div>
+				<form
+					hx-post="/logout"
+					hx-swap="outerHTML"
+					hx-indicator="#logout-spinner"
+					hx-disabled-elt="button"
+					class="ml-auto"
+					hx-confirm="Are you sure you want to logout?"
+					@submit="mobileMenuOpen = false"
+				>
+					@ui.IconButton(ui.ButtonProps{
+					
+						Variant: ui.ButtonDanger,
+						Type:    "submit",
+						FullW:   true,
+						Loading: ui.LoadingConfig{
+							IndicatorID: "logout-spinner"},
+					}) {
+						@icons.LogOut("w-5 h-5")
+					}
+				</form>
+			</div>
+		</div>
+	}
+}

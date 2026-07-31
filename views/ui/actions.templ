@@ -1,0 +1,219 @@
+package ui
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
+// ButtonVariant picks the palette. Unknown variants fall back to "primary".
+// Accepted: "primary" | "accent" | "ghost" | "danger" | "success" | ghost-*.
+type ButtonVariant string
+
+const (
+	ButtonPrimary      ButtonVariant = "primary"
+	ButtonAccent       ButtonVariant = "accent"
+	ButtonGhost        ButtonVariant = "ghost"
+	ButtonDanger       ButtonVariant = "danger"
+	ButtonSuccess      ButtonVariant = "success"
+	ButtonGhostDanger  ButtonVariant = "ghost-danger"
+	ButtonGhostSuccess ButtonVariant = "ghost-success"
+)
+
+// ButtonSize picks the padding. Unknown sizes fall back to "md".
+type ButtonSize string
+
+const (
+	ButtonSM ButtonSize = "sm"
+	ButtonMD ButtonSize = "md"
+	ButtonLG ButtonSize = "lg"
+)
+
+type ButtonType string
+
+const (
+	TypeButton ButtonType = "button"
+	TypeSubmit ButtonType = "submit"
+	TypeReset  ButtonType = "reset"
+)
+
+// LoadingConfig configures the in-button HTMX spinner overlay. IndicatorID is
+// the element id the parent form targets via hx-indicator="#<IndicatorID>";
+// Text is an optional label shown next to the spinner.
+type LoadingConfig struct {
+	IndicatorID string
+	Text        string
+}
+
+// ButtonProps are the inputs for @Button and @IconButton.
+//
+// Disabled state is handled dynamically through Attrs — pass a static disable
+// with templ.Attributes{"disabled": true}, or a reactive one with an Alpine
+// expression, e.g. templ.Attributes{":disabled": "!form.valid || busy"}.
+type ButtonProps struct {
+	Variant ButtonVariant
+	Size    ButtonSize
+	Type    ButtonType
+	FullW   bool
+	Loading LoadingConfig
+	Attrs   templ.Attributes
+}
+
+func btnVariant(v ButtonVariant) string {
+	switch v {
+	case ButtonAccent:
+		return "bg-accent text-accent-fg"
+	case ButtonGhost:
+		return "border border-border bg-panel text-fg hover:bg-primary/5 hover:border-primary"
+	case ButtonDanger:
+		return "bg-error text-white"
+	case ButtonPrimary:
+		return "bg-primary text-primary-fg"
+	case ButtonSuccess:
+		return "bg-success text-white"
+	case ButtonGhostDanger:
+		return "border border-error/40 bg-panel text-error hover:bg-error/10"
+	case ButtonGhostSuccess:
+		return "border border-success/40 bg-panel text-success hover:bg-success/10"
+	}
+	return "bg-primary text-primary-fg"
+}
+
+func btnSize(s ButtonSize) string {
+	switch s {
+	case ButtonSM:
+		return "px-3 py-1.5 text-xs"
+	case ButtonLG:
+		return "px-6 py-3 text-base"
+	}
+	return "px-4 py-2 text-sm"
+}
+
+// Button is the primary action element. Rounded, subtle shadow-on-hover lift.
+templ Button(p ButtonProps) {
+	<button
+		{ p.Attrs... }
+		type={ nonEmpty(string(p.Type), "button") }
+		class={
+			"btn-base inline-flex items-center justify-center gap-2 font-medium rounded-lg relative",
+			"disabled:opacity-60 disabled:cursor-not-allowed",
+			btnVariant(p.Variant),
+			btnSize(p.Size),
+			templ.KV("w-full", p.FullW),
+		}
+	>
+		if p.Loading.IndicatorID != "" {
+			<span
+				id={ p.Loading.IndicatorID }
+				class={ "htmx-indicator absolute inset-0 flex items-center justify-center gap-2 rounded-lg pointer-events-none", btnVariant(p.Variant) }
+			>
+				@icons.Loading("w-5 h-5 animate-spin")
+				if p.Loading.Text != "" {
+					<span>{ p.Loading.Text }</span>
+				}
+			</span>
+		}
+		{ children... }
+	</button>
+}
+
+// IconButton is a square, icon-only action. Include `data-tip="Label"` in Attrs
+// for a tooltip. Same Loading semantics as @Button.
+templ IconButton(p ButtonProps) {
+	<button
+		type={ nonEmpty(string(p.Type), "button") }
+		class={
+			"btn-base grid place-items-center w-9 h-9 rounded-lg relative",
+			"disabled:opacity-60 disabled:cursor-not-allowed",
+			btnVariant(p.Variant),
+		}
+		{ p.Attrs... }
+	>
+		if p.Loading.IndicatorID != "" {
+			<span
+				id={ p.Loading.IndicatorID }
+				class={ "htmx-indicator absolute inset-0 grid place-items-center rounded-lg pointer-events-none", btnVariant(p.Variant) }
+			>
+				@icons.Loading("w-5 h-5 animate-spin")
+			</span>
+		}
+		{ children... }
+	</button>
+}
+
+// ButtonGroup joins related actions into a single rounded bar: only the outer
+// corners are rounded and inner borders collapse into shared dividers.
+templ ButtonGroup() {
+	<div class="inline-flex rounded-lg overflow-hidden shadow-sm [&>*]:rounded-none [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:border-black/10">
+		{ children... }
+	</div>
+}
+
+// SegmentedOption is one choice in a @Segmented control.
+type SegmentedOption struct {
+	Value string
+	Label string
+}
+
+// Segmented is a stateful single-select control (one option active at a time).
+// Emits a "segmented-change" custom event with the new value as `detail`.
+templ Segmented(name, initial string, opts ...SegmentedOption) {
+	<div
+		x-data={ "{ sel: '" + initial + "' }" }
+		role="radiogroup"
+		aria-label={ name }
+		class="inline-flex p-1 gap-1 rounded-lg bg-muted/15 border border-border"
+	>
+		for _, o := range opts {
+			<button
+				type="button"
+				role="radio"
+				:aria-checked={ "sel === '" + o.Value + "'" }
+				@click={ "sel = '" + o.Value + "'; $dispatch('segmented-change', { name: '" + name + "', value: sel })" }
+				:class={ "sel === '" + o.Value + "' ? 'bg-panel text-fg shadow-sm' : 'text-muted hover:text-fg'" }
+				class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
+			>
+				{ o.Label }
+			</button>
+		}
+	</div>
+}
+
+// FAB is a round floating action button. Position it with absolute/fixed at the
+// call site — this just styles the circle. Pass HTMX attrs for async dispatch.
+templ FAB(attrs templ.Attributes) {
+	<button
+		type="button"
+		class="btn-base w-14 h-14 rounded-full bg-primary text-primary-fg grid place-items-center shadow-lg"
+		{ attrs... }
+	>
+		{ children... }
+	</button>
+}
+
+// SpinnerSize maps to a pixel diameter.
+type SpinnerSize string
+
+const (
+	SpinnerSM SpinnerSize = "sm" // 16px
+	SpinnerMD SpinnerSize = "md" // 20px (default)
+	SpinnerLG SpinnerSize = "lg" // 28px
+	SpinnerXL SpinnerSize = "xl" // 36px
+)
+
+func spinnerPx(s SpinnerSize) string {
+	switch s {
+	case SpinnerSM:
+		return "width:16px;height:16px"
+	case SpinnerLG:
+		return "width:28px;height:28px"
+	case SpinnerXL:
+		return "width:36px;height:36px"
+	}
+	return "width:20px;height:20px"
+}
+
+templ Spinner(size SpinnerSize) {
+	<span class="spinner" style={ spinnerPx(size) } role="status" aria-label="Loading"></span>
+}
+
+// Skeleton is a shimmer block used while content loads. Height/width from utilities.
+templ Skeleton(class string) {
+	<div class={ "skeleton", class } aria-hidden="true"></div>
+}

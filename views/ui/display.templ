@@ -1,0 +1,267 @@
+package ui
+
+templ DataListGroup() {
+	<div class="p-4 sm:p-6">
+		<dl class="grid grid-cols-2 gap-3 sm:gap-4">
+			{ children... }
+		</dl>
+	</div>
+}
+
+// StatCardProps — dashboard metric tile.
+// DeltaClass is a Tailwind text-* class for the delta line (e.g. "text-success").
+type StatCardProps struct {
+	Label      string
+	Value      string
+	Delta      string
+	DeltaClass string
+}
+
+templ StatCard(p StatCardProps) {
+	<div class="neon-border clip-panel p-3">
+		<dt class="font-mono text-[10px] text-accent/70 uppercase">{ p.Label }</dt>
+		<dd class="text-2xl font-bold neon-primary mt-1">{ p.Value }</dd>
+		if p.Delta != "" {
+			<div class={ "font-mono text-[10px] mt-0.5", nonEmpty(p.DeltaClass, "text-accent") }>{ p.Delta }</div>
+		}
+	</div>
+}
+
+// Card is a generic container with a neon border + clipped corners.
+// Use Title/Eyebrow for a standard header, or pass children only for a blank canvas.
+type CardProps struct {
+	Eyebrow string // monospace caption above the title
+	Title   string
+	Padded  bool // default true; set false to zero padding (e.g. for tables)
+}
+
+templ Card(p CardProps) {
+	<article class={ "neon-border clip-panel", templ.KV("p-4", !p.Padded || p.Padded) }>
+		if p.Eyebrow != "" || p.Title != "" {
+			<header class="mb-3">
+				if p.Eyebrow != "" {
+					<div class="font-mono text-[10px] text-accent/70 uppercase">{ p.Eyebrow }</div>
+				}
+				if p.Title != "" {
+					<h3 class="neon-primary font-bold tracking-widest">{ p.Title }</h3>
+				}
+			</header>
+		}
+		{ children... }
+	</article>
+}
+
+// Column definition for @DataTable.
+type Column struct {
+	Header string
+	Key    string // row key — used for header text only here; rendering is done by the caller via @Row
+	// Align: "" (default left), "right", "center"
+	Align string
+	// HideBelow: optional Tailwind breakpoint where this column disappears ("sm", "md", "lg").
+	HideBelow string
+}
+
+func colAlign(a string) string {
+	switch a {
+	case "right":
+		return "text-right"
+	case "center":
+		return "text-center"
+	}
+	return "text-left"
+}
+
+func colHide(b string) string {
+	switch b {
+	case "sm":
+		return "hidden sm:table-cell"
+	case "md":
+		return "hidden md:table-cell"
+	case "lg":
+		return "hidden lg:table-cell"
+	}
+	return ""
+}
+
+// DataTable renders the <table> chrome with a column header row. Body rows are
+// passed via children using the @TableRow component so apps can do their own
+// rendering with full type safety.
+templ DataTable(cols ...Column) {
+	<div class="neon-border clip-panel overflow-auto">
+		<table class="w-full font-mono text-xs">
+			<thead>
+				<tr class="border-b border-border">
+					for _, c := range cols {
+						<th class={ "px-4 py-3 text-accent uppercase tracking-widest", colAlign(c.Align), colHide(c.HideBelow) }>
+							{ c.Header }
+						</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				{ children... }
+			</tbody>
+		</table>
+	</div>
+}
+
+// TableRow wraps a <tr> with the hover style. Place <td>'s inside as children.
+templ TableRow() {
+	<tr class="border-b border-border/60 hover:bg-accent/5">
+		{ children... }
+	</tr>
+}
+
+// ActivityGridProps — GitHub-style heatmap.
+type ActivityGridProps struct {
+	Cols int // columns (weeks). Defaults to 14.
+	Rows int // rows (days/hours). Defaults to 7.
+	// Values: row-major intensity 0..1. If empty, a random matrix is used (demo mode).
+	Values []float64
+}
+
+// ActivityGrid draws a Cols×Rows heatmap. Intensities shift from transparent →
+// border → accent → primary. Pass explicit Values for real data.
+templ ActivityGrid(p ActivityGridProps) {
+	{{
+		cols := nonZero(p.Cols, 14)
+		rows := nonZero(p.Rows, 7)
+	}}
+	<div>
+		<div
+			class="grid gap-0.5"
+			style={ "grid-template-columns: repeat(" + itoa(cols) + ", minmax(0,1fr));" }
+			if len(p.Values) == 0 {
+				x-data={ "{ cells: Array.from({length: " + itoa(cols*rows) + "}, () => Math.random()) }" }
+			} else {
+				x-data={ "{ cells: " + floatsToJS(p.Values) + " }" }
+			}
+		>
+			<template x-for="(c, i) in cells" :key="i">
+				<div
+					class="aspect-square"
+					:style="`background: color-mix(in oklab, ${c > 0.75 ? 'var(--color-primary)' : c > 0.45 ? 'var(--color-accent)' : c > 0.2 ? 'var(--color-border)' : 'transparent'} ${Math.round(c*100)}%, var(--color-std));`"
+				></div>
+			</template>
+		</div>
+		<div class="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+			<span>less</span>
+			<span class="w-3 h-3 border border-border"></span>
+			<span class="w-3 h-3 bg-accent/40"></span>
+			<span class="w-3 h-3 bg-accent"></span>
+			<span class="w-3 h-3 bg-primary"></span>
+			<span>more</span>
+		</div>
+	</div>
+}
+
+// TimelineEvent — one entry on a vertical timeline.
+// Kind drives the node colour: "primary" | "accent" | "success" | "warning" | "error" | "info".
+type TimelineEvent struct {
+	Time  string
+	Title string
+	Body  string
+	Kind  string
+}
+
+templ Timeline(events ...TimelineEvent) {
+	<ol class="relative border-l border-accent/40 pl-5 space-y-4">
+		for _, e := range events {
+			<li class="relative">
+				<span
+					class="absolute -left-[25px] top-1 w-2.5 h-2.5 rounded-full"
+					style={ "background: var(--color-" + nonEmpty(e.Kind, "primary") + "); box-shadow: 0 0 8px var(--color-" + nonEmpty(e.Kind, "primary") + ");" }
+				></span>
+				<div class="font-mono text-[10px] text-accent/70">{ e.Time }</div>
+				<div class="font-bold">{ e.Title }</div>
+				if e.Body != "" {
+					<div class="text-sm text-muted">{ e.Body }</div>
+				}
+			</li>
+		}
+	</ol>
+}
+
+// AvatarProps — round-ish initial-avatar square (clip-btn).
+// Colour drives both background and foreground contrast.
+type AvatarProps struct {
+	Initial string
+	// Color: "primary" | "accent" | "success" | "warning" | "error" | "muted"
+	Color string
+	// Size: "sm" (w-8), "md" (w-10, default), "lg" (w-12)
+	Size string
+}
+
+func avatarColor(c string) string {
+	switch c {
+	case "accent":
+		return "bg-accent text-accent-fg"
+	case "success":
+		return "bg-success text-std"
+	case "warning":
+		return "bg-warning text-std"
+	case "error":
+		return "bg-error text-std"
+	case "muted":
+		return "bg-muted text-std"
+	}
+	return "bg-primary text-primary-fg"
+}
+
+func avatarSize(s string) string {
+	switch s {
+	case "sm":
+		return "w-8 h-8 text-xs"
+	case "lg":
+		return "w-12 h-12 text-base"
+	}
+	return "w-10 h-10 text-sm"
+}
+
+templ Avatar(p AvatarProps) {
+	<div class={ "clip-btn grid place-items-center font-black flex-none", avatarColor(p.Color), avatarSize(p.Size) }>
+		{ p.Initial }
+	</div>
+}
+
+// AvatarGroup overlaps avatars horizontally and optionally appends a "+N" pill.
+templ AvatarGroup(overflow int, avatars ...AvatarProps) {
+	<div class="flex -space-x-2">
+		for _, a := range avatars {
+			<div class={ "clip-btn grid place-items-center font-black border-2 border-panel flex-none", avatarColor(a.Color), avatarSize(nonEmpty(a.Size, "sm")) }>
+				{ a.Initial }
+			</div>
+		}
+		if overflow > 0 {
+			<div class="w-8 h-8 clip-btn border-2 border-panel bg-std  text-accent grid place-items-center font-mono text-[10px]">+{ itoa(overflow) }</div>
+		}
+	</div>
+}
+
+// EmptyStateProps — the "no content yet" placeholder.
+type EmptyStateProps struct {
+	Title       string
+	Description string
+	CTALabel    string
+	CTAHref     string
+}
+
+templ EmptyState(p EmptyStateProps) {
+	<div class="neon-border clip-panel p-6 text-center">
+		<div class="mx-auto w-12 h-12 clip-btn border border-accent text-accent grid place-items-center mb-3">
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+				<rect x="3" y="4" width="18" height="16"></rect>
+				<path d="M3 10h18M8 4v16"></path>
+			</svg>
+		</div>
+		<div class="glitch neon-primary text-lg font-bold tracking-widest" data-text={ p.Title }>{ p.Title }</div>
+		if p.Description != "" {
+			<p class="text-sm text-muted mt-1">{ p.Description }</p>
+		}
+		if p.CTALabel != "" && p.CTAHref != "" {
+			<a href={ templ.SafeURL(p.CTAHref) } class="inline-block mt-4 glow-btn clip-btn bg-primary text-primary-fg font-mono text-xs uppercase tracking-widest px-3 py-2">
+				{ p.CTALabel }
+			</a>
+		}
+	</div>
+}

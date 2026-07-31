@@ -1,0 +1,175 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+import "github.com/Francesco99975/shorehamex2/views/ui"
+
+type ProfileProps struct {
+	Username      string
+	Email         string
+	EmailVerified bool
+	Initials      string
+	UserID        string
+	Role          string
+	Created       string
+	LastLogin     string
+	CSRF          string
+}
+
+templ SettingsProfileTab(props ProfileProps) {
+	<div class="space-y-4">
+		<!-- Profile Info Card -->
+		@ProfileInfoCard(props)
+		<!-- Account Details Card -->
+		@AccountDetailsCard(props)
+	</div>
+}
+
+templ ProfileInfoCard(props ProfileProps) {
+	<div class="rounded-xl border border-primary/10 bg-std shadow-sm">
+		<div class="border-b border-primary/10 px-4 sm:px-6 py-4">
+			<h2 class="text-base sm:text-lg font-semibold text-primary">Profile Information</h2>
+			<p class="text-sm text-primary/60">Update your personal information</p>
+		</div>
+		@ChangeUsernameForm(props.Username, props.CSRF)
+		@ChangeUserEmailForm(props.Email, props.EmailVerified, props.CSRF)
+	</div>
+}
+
+templ ChangeUsernameForm(username string, csrf string) {
+	<form
+		hx-patch="/settings/profile/username"
+		hx-swap="none"
+		{ ui.WithLoading("profile-indicator")... }
+		class="p-4 sm:p-6 space-y-5"
+	>
+		@CSRF(csrf)
+		<!-- Avatar Section -->
+		// <div class="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+		// 	<div class="relative">
+		// 		<div class="h-20 w-20 sm:h-24 sm:w-24 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center">
+		// 			<span class="text-xl sm:text-2xl font-bold text-white">{ props.Initials }</span>
+		// 		</div>
+		// 		<button type="button" class="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-std border-2 border-primary/20 flex items-center justify-center text-primary hover:bg-primary/5 transition-colors">
+		// 			@icons.Camera("w-4 h-4")
+		// 		</button>
+		// 	</div>
+		// 	<div class="text-center sm:text-left">
+		// 		<p class="text-sm font-medium text-primary">Profile Photo</p>
+		// 		<p class="text-xs text-primary/60 mt-0.5">JPG, PNG or GIF. Max 2MB</p>
+		// 	</div>
+		// </div>
+		<!-- Fields -->
+		<div class="space-y-4">
+			@ui.Input(ui.InputProps{
+				Name:  "username",
+				Label: "Username",
+				Attrs: templ.Attributes{
+					"value": username,
+				},
+			})
+		</div>
+		<div class="flex justify-end pt-4 border-t border-primary/10">
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonPrimary,
+				Size:    ui.ButtonMD,
+				Type:    ui.TypeSubmit,
+			
+				Loading: ui.LoadingConfig{IndicatorID: "profile-indicator"},
+			}) {
+				<span>Change Username</span>
+			}
+		</div>
+	</form>
+}
+
+templ ChangeUserEmailForm(email string, verified bool, csrf string) {
+	<form
+		hx-patch="/settings/profile/email"
+		hx-target="this"
+		hx-swap="outerHTML"
+		{ ui.WithLoading("profile-indicator")... }
+		class="p-4 sm:p-6 space-y-5"
+	>
+		@CSRF(csrf)
+		<div class="space-y-4">
+			@ui.Input(ui.InputProps{
+				Name:  "email",
+				Type:  "email",
+				Label: "Email",
+				Attrs: templ.Attributes{
+					"value": email,
+				},
+			})
+			if verified {
+				<span class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-success/10 text-success text-sm font-medium">
+					@icons.CheckIcon("w-4 h-4 mr-1.5")
+					Verified
+				</span>
+			} else {
+				<span class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-warning/10 text-warning text-sm font-medium">
+					Unverified
+				</span>
+			}
+		</div>
+		<div class="flex justify-end pt-4 border-t border-primary/10">
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonPrimary,
+				Size:    ui.ButtonMD,
+				Type:    ui.TypeSubmit,
+			
+				Loading: ui.LoadingConfig{
+					IndicatorID: "profile-indicator",
+				},
+			}) {
+				<span>Change Email</span>
+			}
+		</div>
+	</form>
+}
+
+templ AccountDetailsCard(props ProfileProps) {
+	<div class="rounded-xl border border-primary/10 bg-std shadow-sm">
+		<div class="border-b border-primary/10 px-4 sm:px-6 py-4">
+			<h2 class="text-base sm:text-lg font-semibold text-primary">Account Details</h2>
+			<p class="text-sm text-primary/60">Your account information</p>
+		</div>
+		@ui.DataListGroup() {
+			// @DataListItemText("User ID", props.UserID)
+			// @DataListItemBadge("Role", props.Role)
+			// @DataListItemText("Created", props.Created)
+			// @DataListItemText("Last Login", props.LastLogin)
+			@ui.StatCard(ui.StatCardProps{
+				Label: "User ID",
+				Value: props.UserID,
+			})
+			@ui.StatCard(ui.StatCardProps{
+				Label: "Role",
+				Value: props.Role,
+			})
+			@ui.StatCard(ui.StatCardProps{
+				Label: "Created",
+				Value: props.Created,
+			})
+			@ui.StatCard(ui.StatCardProps{
+				Label: "Last Login",
+				Value: props.LastLogin,
+			})
+		}
+	</div>
+}
+
+templ DataListItemText(key string, value string) {
+	<div class="rounded-lg bg-primary/5 p-3 sm:p-4">
+		<dt class="text-xs font-medium text-primary/60 uppercase tracking-wider">{ key }</dt>
+		<dd class="mt-1 text-xs sm:text-sm text-primary">{ value }</dd>
+	</div>
+}
+
+templ DataListItemBadge(key string, value string) {
+	<div class="rounded-lg bg-primary/5 p-3 sm:p-4">
+		<dt class="text-xs font-medium text-primary/60 uppercase tracking-wider">{ key }</dt>
+		<dd class="mt-1">
+			@RoleBadge(value)
+		</dd>
+	</div>
+}

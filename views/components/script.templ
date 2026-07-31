@@ -1,0 +1,13 @@
+package components
+
+templ Script(src string, nonce string, integrity string) {
+	<script type="module" src={ src } nonce={ nonce } integrity={ integrity }></script>
+}
+
+templ AsyncScript(src string, nonce string, integrity string) {
+	<script type="module" src={ src } nonce={ nonce } async integrity={ integrity }></script>
+}
+
+templ DeferredScript(src string, nonce string, integrity string) {
+	<script type="module" src={ src } nonce={ nonce } defer="true" integrity={ integrity }></script>
+}

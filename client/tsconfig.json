@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    // 🎯 LET VITE HANDLE COMPILATION - TypeScript ONLY
+    "composite": true,
+    "types": [
+      "htmx.org",
+      "alpinejs"
+    ],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler", // 👈 Vite's module system
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    // 🛑 NO COMPILATION - Vite does this
+    "noEmit": true, // 👈 CRITICAL: Don't compile, just type-check
+    "noResolve": true,
+    // ✅ Modern defaults (Vite overrides for build)
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "target": "ES2022",
+    "module": "ESNext",
+    "jsx": "preserve"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.css"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

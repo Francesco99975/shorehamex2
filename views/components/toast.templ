@@ -1,0 +1,15 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
+templ Toast() {
+	<div
+		x-show="toast"
+		x-transition
+		class="fixed top-4 right-4 bg-success text-std px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50"
+		x-cloak
+	>
+		@icons.CheckIcon("w-5 h-5")
+		<span x-text="toast"></span>
+	</div>
+}

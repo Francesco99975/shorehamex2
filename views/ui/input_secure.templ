@@ -1,0 +1,451 @@
+package ui
+
+import "fmt"
+
+// PasswordProps — masked input with show/hide toggle, optional live strength
+// meter, and optional rule-based validation. All validation is client-side via
+// Alpine; always validate server-side independently.
+type PasswordProps struct {
+	Name          string
+	Label         string
+	Placeholder   string
+	Value         string
+	Required      bool
+	ShowStrength  bool
+	MinLen        int
+	RequireNumber bool
+	RequireCaps   bool
+	RequireSymbol bool
+	Attrs         templ.Attributes
+}
+
+// SecurePasswordInput renders a password field with a 4-bar strength meter.
+templ SecurePasswordInput(p PasswordProps) {
+	{{ minLenStr := itoa(p.MinLen) }}
+	{{reqNum := "false"
+if p.RequireNumber {
+	reqNum = "true"
+}
+	}}
+	{{reqCap := "false"
+if p.RequireCaps {
+	reqCap = "true"
+}
+	}}
+	{{reqSym := "false"
+if p.RequireSymbol {
+	reqSym = "true"
+}
+	}}
+	{{ hasRules := p.MinLen > 0 || p.RequireNumber || p.RequireCaps || p.RequireSymbol }}
+	<div
+		x-data={ "{ show:false, v: '" + p.Value + "', err: '', " +
+				"minLen: " + minLenStr + ", reqNum: " + reqNum + ", reqCap: " + reqCap + ", reqSym: " + reqSym + ", " +
+				"score(){ let s=0; " +
+				"if(this.v.length>=8)s++; " +
+				"if(/[A-Z]/.test(this.v))s++; " +
+				"if(/[0-9]/.test(this.v))s++; " +
+				"if(/[^\\w]/.test(this.v))s++; return s; }, " +
+				"validate(){ " +
+				"if(!this.v.length){ this.err=''; return; } " +
+				"if(this.minLen && this.v.length < this.minLen){ this.err = 'Minimum ' + this.minLen + ' characters required'; return; } " +
+				"if(this.reqCap && !/[A-Z]/.test(this.v)){ this.err = 'An uppercase letter is required'; return; } " +
+				"if(this.reqNum && !/[0-9]/.test(this.v)){ this.err = 'A number is required'; return; } " +
+				"if(this.reqSym && !/[^\\w]/.test(this.v)){ this.err = 'A symbol is required'; return; } " +
+				"this.err = ''; } }" }
+	>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="relative">
+			<input
+				:type="show ? 'text' : 'password'"
+				name={ p.Name }
+				x-model="v"
+				if hasRules {
+					@input="validate()"
+					@blur="validate()"
+					:aria-invalid="!!err"
+				}
+				placeholder={ nonEmpty(p.Placeholder, "••••••••") }
+				required?={ p.Required }
+				class="field pr-16"
+				autocomplete="current-password"
+				{ p.Attrs... }
+			/>
+			<button
+				type="button"
+				@click="show = !show"
+				class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-primary hover:text-accent"
+				aria-label="Toggle password visibility"
+			>
+				<span x-text="show ? 'Hide' : 'Show'"></span>
+			</button>
+		</div>
+		if p.ShowStrength {
+			<div class="mt-2 grid grid-cols-4 gap-1.5" aria-hidden="true">
+				<template x-for="i in 4" :key="i">
+					<div
+						class="h-1.5 rounded-full transition-colors"
+						:class="score() >= i
+							? (score()===1 ? 'bg-error' : score()===2 ? 'bg-warning' : score()===3 ? 'bg-info' : 'bg-success')
+							: 'bg-muted/25'"
+					></div>
+				</template>
+			</div>
+			<div class="mt-1 text-xs text-muted">
+				Strength:
+				<span class="text-fg font-medium" x-text="['none','weak','fair','good','strong'][score()]"></span>
+			</div>
+		}
+		if hasRules {
+			<p
+				x-show="err"
+				x-cloak
+				x-text="err"
+				class="mt-1 text-xs text-error"
+				role="alert"
+				aria-live="polite"
+			></p>
+		}
+	</div>
+}
+
+// OTPProps — N-digit one-time-code input rendered as separated cells, driven by
+// a single hidden input so paste, autocomplete, and SMS auto-fill all work.
+type OTPProps struct {
+	Name       string
+	Label      string
+	Length     int
+	Required   bool
+	AutoSubmit bool
+	Attrs      templ.Attributes
+}
+
+// OTP renders a row of separated cells driven by one hidden input.
+templ OTP(p OTPProps) {
+	{{length := p.Length
+if length == 0 {
+	length = 6
+}
+	}}
+	{{ lenStr := itoa(length) }}
+	{{ submitJS := "" }}
+	{{if p.AutoSubmit {
+	submitJS = "; if(v.length===" + lenStr + " && $el.form){ $nextTick(()=>$el.form.requestSubmit()) }"
+}
+	}}
+	<div x-data={ "{ v: '', focused: false, len: " + lenStr + " }" }>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="relative" @click="$refs.otp.focus()">
+			<div class="flex gap-2 sm:gap-3 pointer-events-none select-none" aria-hidden="true">
+				<template x-for="i in len" :key="i">
+					<div
+						class="flex-1 aspect-square max-w-14 grid place-items-center rounded-lg border-2 transition-all text-2xl font-semibold"
+						:class="
+							focused && (i - 1) === Math.min(v.length, len - 1)
+								? 'border-primary ring-4 ring-primary/20 text-fg'
+								: v[i-1]
+									? 'border-primary/50 text-fg bg-panel'
+									: 'border-border bg-panel text-muted'
+						"
+					>
+						<span x-text="v[i-1] || ''"></span>
+					</div>
+				</template>
+			</div>
+			<input
+				x-ref="otp"
+				type="text"
+				id={ p.Name }
+				name={ p.Name }
+				inputmode="numeric"
+				pattern="[0-9]*"
+				maxlength={ lenStr }
+				autocomplete="one-time-code"
+				required?={ p.Required }
+				x-model="v"
+				@focus="focused = true"
+				@blur="focused = false"
+				@input={ "v = $event.target.value.replace(/\\D/g,'').slice(0," + lenStr + "); $event.target.value = v" + submitJS }
+				class="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus:outline-none"
+				style="caret-color: transparent;"
+				aria-label={ nonEmpty(p.Label, "One-time code") }
+				{ p.Attrs... }
+			/>
+		</div>
+		if !p.AutoSubmit {
+			<div class="mt-3">
+				@Button(ButtonProps{
+					Variant: ButtonPrimary,
+					Size:    ButtonSM,
+					Type:    TypeSubmit,
+					Attrs: templ.Attributes{
+						"x-bind:disabled": "v.length !== len",
+					},
+				}) {
+					Verify
+				}
+			</div>
+		}
+	</div>
+}
+
+// OTPSingleProps — single-field numeric one-time-code input with letter-spaced
+// digits, ideal for compact 2FA / magic-link flows.
+type OTPSingleProps struct {
+	Name       string
+	Label      string
+	Hint       string
+	Length     int
+	Required   bool
+	AutoSubmit bool
+	Attrs      templ.Attributes
+}
+
+// OTPSingleInput is a single-field numeric one-time-code input.
+templ OTPSingleInput(p OTPSingleProps) {
+	{{length := p.Length
+if length == 0 {
+	length = 6
+}
+	}}
+	{{ lenStr := itoa(length) }}
+	{{ submitJS := "" }}
+	{{if p.AutoSubmit {
+	submitJS = "; if(v.length===" + lenStr + " && $el.form){ $nextTick(()=>$el.form.requestSubmit()) }"
+}
+	}}
+	<div x-data="{ v: '' }">
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<input
+			type="text"
+			id={ p.Name }
+			name={ p.Name }
+			inputmode="numeric"
+			pattern="[0-9]*"
+			maxlength={ lenStr }
+			placeholder={ repeat("0", length) }
+			autocomplete="one-time-code"
+			required?={ p.Required }
+			x-model="v"
+			@input={ "v = $event.target.value.replace(/\\D/g,'').slice(0," + lenStr + "); $event.target.value = v" + submitJS }
+			class="field text-center font-mono text-2xl tracking-[0.5em]"
+			{ p.Attrs... }
+		/>
+		if p.Hint != "" {
+			<p class="mt-1 text-xs text-muted">{ p.Hint }</p>
+		}
+	</div>
+}
+
+// CodeInputProps — generic alphanumeric code field for license keys, backup
+// codes, redemption codes, recovery phrases, etc.
+type CodeInputProps struct {
+	Name        string
+	Label       string
+	Hint        string
+	MaxLength   int
+	Placeholder string
+	Required    bool
+	Uppercase   bool
+	AutoSubmit  bool
+	Attrs       templ.Attributes
+}
+
+// CodeInput is a single-field alphanumeric code input.
+templ CodeInput(p CodeInputProps) {
+	{{maxLen := p.MaxLength
+if maxLen == 0 {
+	maxLen = 21
+}
+	}}
+	{{ maxLenStr := itoa(maxLen) }}
+	{{caseJS := ""
+if p.Uppercase {
+	caseJS = ".toUpperCase()"
+}
+	}}
+	{{ submitJS := "" }}
+	{{if p.AutoSubmit {
+	submitJS = "; if(v.length===" + maxLenStr + " && $el.form){ $nextTick(()=>$el.form.requestSubmit()) }"
+}
+	}}
+	{{autoCap := "off"
+if p.Uppercase {
+	autoCap = "characters"
+}
+	}}
+	<div x-data="{ v: '' }">
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<input
+			type="text"
+			id={ p.Name }
+			name={ p.Name }
+			placeholder={ nonEmpty(p.Placeholder, "Enter code") }
+			required?={ p.Required }
+			maxlength={ maxLenStr }
+			autocomplete="off"
+			autocapitalize={ autoCap }
+			spellcheck="false"
+			x-model="v"
+			@input={ "v = $event.target.value" + caseJS + ".slice(0," + maxLenStr + "); $event.target.value = v" + submitJS }
+			class={
+				"field text-center font-mono text-lg tracking-wider",
+				templ.KV("uppercase", p.Uppercase),
+			}
+			{ p.Attrs... }
+		/>
+		if p.Hint != "" {
+			<p class="mt-1 text-xs text-muted">{ p.Hint }</p>
+		}
+	</div>
+}
+
+// TagInputProps — list of short tag strings with inline add/remove.
+type TagInputProps struct {
+	Name        string
+	Label       string
+	Initial     []string
+	Placeholder string
+}
+
+// TagInput is a pill-based multi-value input. Enter or comma commits; Backspace
+// on an empty draft removes the last tag. Submits as a hidden CSV input.
+templ TagInput(p TagInputProps) {
+	<div
+		x-data={ "{ tags: " + jsStringArray(p.Initial) + ", draft: '', " +
+				"add(){ const v=this.draft.trim(); if(v && !this.tags.includes(v)) this.tags.push(v); this.draft=''; }, " +
+				"remove(t){ this.tags = this.tags.filter(x => x !== t); } }" }
+	>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="field flex flex-wrap gap-1.5 items-center min-h-[44px]">
+			<template x-for="t in tags" :key="t">
+				<span class="rounded-full bg-primary/10 text-primary text-xs font-medium px-2.5 py-1 flex items-center gap-1.5">
+					<span x-text="t"></span>
+					<button type="button" @click="remove(t)" class="text-primary/70 hover:text-error" aria-label="Remove tag">✕</button>
+				</span>
+			</template>
+			<input
+				x-model="draft"
+				@keydown.enter.prevent="add()"
+				@keydown.comma.prevent="add()"
+				@keydown.backspace="if(!draft && tags.length) tags.pop()"
+				placeholder={ nonEmpty(p.Placeholder, "Type and press Enter") }
+				class="bg-transparent outline-none text-sm flex-1 min-w-[140px]"
+			/>
+		</div>
+		<input type="hidden" name={ p.Name } :value="tags.join(',')"/>
+	</div>
+}
+
+// FileUploadProps — drag-and-drop zone with a selected-files preview list.
+// This variant is form-native: it does NOT upload on change. The files stay in
+// the underlying <input type="file"> so they are submitted together with the
+// rest of the form when its submit button is pressed. Place <FileUpload> inside
+// a <form> (with hx-encoding="multipart/form-data" or a normal multipart form).
+type FileUploadProps struct {
+	Name      string
+	Label     string
+	Accept    string
+	Multiple  bool // when false, only a single file is ever kept
+	Required  bool // adds native required validation on submit
+	MaxSizeMB int  // per-file max size in MB (defaults to 10 when <= 0)
+	Hint      string
+}
+
+// maxSizeMB returns the effective per-file size limit, defaulting to 10MB.
+func (p FileUploadProps) maxSizeMB() int {
+	if p.MaxSizeMB <= 0 {
+		return 10
+	}
+	return p.MaxSizeMB
+}
+
+// fileUploadState builds the Alpine x-data. maxBytes and multiple are injected
+// from Go so the client logic can enforce the size cap and single-file rule.
+func fileUploadState(p FileUploadProps) string {
+	return fmt.Sprintf(`{
+ over:false, files:[], error:'',
+ maxBytes:%d, multiple:%t,
+ onDrop(e){ this.over=false; this.add([...e.dataTransfer.files]); },
+ onPick(e){ this.add([...e.target.files]); },
+ add(list){
+ this.error='';
+ let incoming = this.multiple ? [...this.files, ...list] : list.slice(-1);
+ const kept=[];
+ for(const f of incoming){
+ if(f.size > this.maxBytes){ this.error = f.name+' is larger than '+this.size(this.maxBytes); continue; }
+ kept.push(f);
+ }
+ this.files = this.multiple ? kept : kept.slice(0,1);
+ this.sync();
+ },
+ rm(i){ this.files.splice(i,1); this.error=''; this.sync(); },
+ sync(){ const dt=new DataTransfer(); this.files.forEach(f=>dt.items.add(f)); this.$refs.input.files=dt.files; },
+ size(b){ const u=['B','KB','MB','GB']; let i=0; while(b>=1024 && i<u.length-1){ b/=1024; i++; } return b.toFixed(1)+u[i]; }
+ }`, p.maxSizeMB()*1024*1024, p.Multiple)
+}
+
+// FileUpload is a themed dropzone + picker with a client-side preview list.
+templ FileUpload(p FileUploadProps) {
+	<div x-data={ fileUploadState(p) }>
+		if p.Label != "" {
+			<div class="text-sm font-medium text-fg mb-1.5">
+				{ p.Label }
+				if p.Required {
+					<span class="text-error">*</span>
+				}
+			</div>
+		}
+		<label
+			@dragover.prevent="over=true"
+			@dragleave.prevent="over=false"
+			@drop.prevent="onDrop($event)"
+			:class="over ? 'border-primary bg-primary/5' : 'border-border'"
+			class="block p-6 border-2 border-dashed rounded-xl text-center cursor-pointer transition-colors"
+		>
+			<svg class="mx-auto text-muted" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+				<path d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"></path>
+			</svg>
+			<div class="mt-2 text-sm text-fg">
+				Drop
+				if p.Multiple {
+					{ "files" }
+				} else {
+					{ "a file" }
+				}
+				or <span class="text-primary font-medium">browse</span>
+			</div>
+			<div class="mt-1 text-xs text-muted">{ nonEmpty(p.Hint, fmt.Sprintf("Max %dMB", p.maxSizeMB())) }</div>
+			<input
+				x-ref="input"
+				type="file"
+				name={ p.Name }
+				accept={ p.Accept }
+				multiple?={ p.Multiple }
+				required?={ p.Required }
+				class="sr-only"
+				@change="onPick($event)"
+			/>
+		</label>
+		<p class="mt-2 text-xs text-error" x-show="error" x-text="error" x-cloak></p>
+		<ul class="mt-3 space-y-1.5" x-show="files.length">
+			<template x-for="(f,i) in files" :key="i">
+				<li class="flex items-center justify-between gap-2 text-sm px-3 py-2 rounded-lg bg-panel border border-border">
+					<span class="truncate text-fg" x-text="f.name"></span>
+					<span class="text-muted flex-none text-xs" x-text="size(f.size)"></span>
+					<button type="button" @click="rm(i)" class="text-error flex-none" aria-label="Remove file">✕</button>
+				</li>
+			</template>
+		</ul>
+	</div>
+}

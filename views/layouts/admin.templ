@@ -1,0 +1,15 @@
+package layouts
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+)
+
+templ AdminLayout(site config.Site) {
+	@CoreHTML(site) {
+		<div class="min-h-screen flex flex-col">
+			@components.AdminNav(site)
+			{ children... }
+		</div>
+	}
+}

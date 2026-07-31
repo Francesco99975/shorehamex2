@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache: true
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: templ generate
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+
+      - name: Run make ci
+        run: make ci
+
+      - name: Install coverage converter
+        run: go install github.com/t-yuki/gocover-cobertura@latest
+
+      - name: Convert coverage to XML
+        run: |
+          gocover-cobertura < coverage.out > coverage.xml
+
+      - name: Generate coverage report
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          format: markdown
+          output: both
+
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          header: test-coverage
+          recreate: true
+          path: code-coverage-results.md   # Fixed: removed the broken markdown link syntax
+
+      - name: Generate Coverage Badge
+        uses: tj-actions/coverage-badge-go@v3   # This action reads the .out file directly and generates a badge
+        with:
+          green: "80"   # optional: customize thresholds if needed
+          filename: coverage.out

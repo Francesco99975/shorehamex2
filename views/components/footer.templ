@@ -1,0 +1,14 @@
+package components
+
+templ Footer(appName, year string) {
+	<footer class="relative bg-primary/80 backdrop-blur-md border-t border-primary/30 dark:border-primary/50 py-3 mt-auto transition-colors duration-300">
+		<div class="container mx-auto px-4">
+			<div class="flex flex-col items-center justify-center space-y-4">
+				<p class="text-sm text-std/70 dark:text-std/60 transition-colors duration-300">
+					&copy; { year } <span class="font-semibold text-std/90 dark:text-std/80">{ appName }</span>. All rights reserved.
+				</p>
+				<div class="w-16 h-px bg-linear-to-r from-transparent via-accent/50 to-transparent"></div>
+			</div>
+		</div>
+	</footer>
+}

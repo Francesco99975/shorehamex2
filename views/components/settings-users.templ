@@ -1,0 +1,429 @@
+package components
+
+import (
+	"fmt"
+	"github.com/Francesco99975/shorehamex2/internal/auth"
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"strconv"
+)
+
+type UsersProps struct {
+	Users      []UserInfo
+	TotalUsers int
+	Page       int
+	PerPage    int
+	Viewer     enums.Role
+	CSRF       string
+}
+
+type UserInfo struct {
+	ID        string
+	Username  string
+	Sessions  []SessionInfo
+	Email     string
+	Verified  bool
+	Initials  string
+	Role      string
+	Status    string
+	TwoFA     bool
+	LastLogin string
+	Gradient  string
+	CanEdit   bool
+	CanDelete bool
+}
+
+func allowedCreateRoles(viewer enums.Role) []ui.DropOption {
+	all := []enums.Role{enums.Roles.USER, enums.Roles.ADMIN, enums.Roles.DEVELOPER}
+	out := []ui.DropOption{}
+	for _, r := range all {
+		if auth.CanManageUser(viewer, enums.ActCreate, r) {
+			out = append(out, ui.DropOption{Value: r.String(), Label: r.String()})
+		}
+	}
+	return out
+}
+
+templ SettingsUsersTab(props UsersProps) {
+	<div class="space-y-4">
+		@UserManagementCard(props)
+	</div>
+}
+
+templ UserManagementCard(props UsersProps) {
+	<div class="rounded-xl border border-primary/10 bg-std shadow-sm" x-data="{ showCreateForm: false }">
+		<div class="border-b border-primary/10 px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+			<div>
+				<h2 class="text-base sm:text-lg font-semibold text-primary">User Management</h2>
+				<p class="text-sm text-primary/60">Create and manage users</p>
+			</div>
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonPrimary,
+				Size:    ui.ButtonLG,
+				Attrs:   templ.Attributes{"@click": "showCreateForm = !showCreateForm"},
+			}) {
+				@icons.PlusIcon("w-4 h-4")
+				<span>Create User</span>
+			}
+		</div>
+		<!-- Create User Form -->
+		@CreateUserForm(props.CSRF, props.Viewer)
+		<!-- Filters -->
+		@UserFilters(props.Viewer)
+		<!-- Users List -->
+		<div class="divide-y divide-primary/10" id="users-list">
+			@UserList(props.Users, props.CSRF)
+		</div>
+		<!-- Pagination -->
+		@UsersPagination(props.TotalUsers, props.Page, props.PerPage, false)
+	</div>
+}
+
+templ UserList(users []UserInfo, csrf string) {
+	for _, user := range users {
+		@SettingsUserItem(user, csrf)
+	}
+}
+
+templ CreateUserForm(csrf string, viewer enums.Role) {
+	<div x-show="showCreateForm" x-collapse class="border-b border-primary/10 bg-primary/5">
+		<form
+			hx-post="/settings/users"
+			hx-target="#users-list"
+			hx-swap="afterbegin"
+			{ ui.WithLoading("create-user-indicator")... }
+			@htmx:after-request="if(event.detail.successful) showCreateForm = false"
+			class="p-4 sm:p-6 space-y-4"
+		>
+			@CSRF(csrf)
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+				@ui.Input(ui.InputProps{
+					Name:     "username",
+					Label:    "Username",
+					Required: true,
+				})
+				@ui.Input(ui.InputProps{
+					Name:     "email",
+					Type:     "email",
+					Label:    "Email",
+					Required: true,
+				})
+				@ui.SecurePasswordInput(ui.PasswordProps{
+					Name:          "password",
+					Label:         "Password",
+					Required:      true,
+					ShowStrength:  true,
+					MinLen:        8,
+					RequireNumber: true,
+					RequireCaps:   true,
+					RequireSymbol: true,
+				})
+				@ui.Droplist(ui.DroplistProps{
+					Name: "role", Label: "Role",
+					Required: true,
+					Selected: enums.Roles.USER.String(),
+					Opts:     allowedCreateRoles(viewer),
+				})
+			</div>
+			<div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonMD,
+					Attrs:   templ.Attributes{"@click": "showCreateForm = false"},
+				}) {
+					<span>
+						Cancel
+					</span>
+				}
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonPrimary,
+					Size:    ui.ButtonMD,
+					Type:    ui.TypeSubmit,
+					Loading: ui.LoadingConfig{
+						IndicatorID: "create-user-indicator",
+					},
+				}) {
+					<span>
+						Create User
+					</span>
+				}
+			</div>
+		</form>
+	</div>
+}
+
+templ UserFilters(viewer enums.Role) {
+	<div class="px-4 sm:px-6 py-4 border-b border-primary/10 flex flex-col sm:flex-row gap-3">
+		<div class="flex-1">
+			@ui.Search(ui.SearchProps{
+				Name:           "search",
+				GetURL:         "/search/users",
+				TargetID:       "users-list",
+				DebounceMS:     300,
+				Label:          "Search Users",
+				Placeholder:    "Search users...",
+				ExternalTarget: true,
+				Include:        "[name='role_filter']",
+			})
+		</div>
+		@ui.FilterSelect(ui.FilterSelectProps{
+			Name:    "role_filter",
+			Label:   "Filter Role",
+			Opts:    allowedCreateRoles(viewer),
+			URL:     "/search/users",
+			Trigger: "change",
+			Target:  "users-list",
+			Swap:    "innerHTML",
+			Include: "[name='search']",
+		})
+	</div>
+}
+
+templ SettingsUserItem(user UserInfo, csrf string) {
+	<div id={ "user-" + user.ID } class={ "p-4 hover:bg-primary/5 transition-colors", templ.KV("opacity-60", user.Status != "Active") }>
+		<div class="flex items-start justify-between gap-3">
+			<a hx-boost="true" href={ templ.SafeURL("/settings/users/" + user.ID) } class="flex items-center gap-3 min-w-0 flex-1">
+				<!-- AVATAR carries identity-state: a status dot (active/inactive) and
+                     a 2FA shield in the corner. Tooltips give the verbose meaning;
+                     screen readers get an aria-label combining both. -->
+				<div class="relative shrink-0">
+					<div class={ "h-10 w-10 rounded-full flex items-center justify-center", user.Gradient }>
+						<span class="font-bold text-accent uppercase">{ user.Initials }</span>
+					</div>
+					<!-- Active dot: green = active, muted = inactive. Bottom-right corner. -->
+					<span
+						class={
+							"absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-panel",
+							templ.KV("bg-success", user.Status == "Active"),
+							templ.KV("bg-muted", user.Status != "Active"),
+						}
+						title={ user.Status }
+						aria-label={ "Status: " + user.Status }
+					></span>
+					<!-- 2FA shield: top-right corner, only rendered when enabled. -->
+					if user.TwoFA {
+						<span
+							class="absolute -top-0.5 -left-0.5 h-4 w-4 rounded-full bg-panel ring-2 ring-panel flex items-center justify-center text-success"
+							title="Two-factor authentication enabled"
+							aria-label="Two-factor authentication enabled"
+						>
+							@icons.Shield("w-5 h-5")
+						</span>
+					}
+				</div>
+				<div class="min-w-0">
+					<p class="text-sm font-medium text-primary truncate">{ user.Username }</p>
+					<p class="text-xs text-primary/60 truncate">{ user.Email }</p>
+				</div>
+			</a>
+			<!-- Action buttons unchanged -->
+			<div class="flex items-center gap-1 shrink-0">
+				if user.Status == "Inactive" {
+					<form
+						hx-patch={ "/settings/users/" + user.ID }
+						hx-target="closest div.p-4"
+						hx-swap="outerHTML"
+					>
+						@CSRF(csrf)
+						@ui.IconButton(ui.ButtonProps{
+							Variant: ui.ButtonGhost,
+							Size:    ui.ButtonSM,
+							Type:    "sumbit",
+						}) {
+							@icons.Refresh("w-4 h-4")
+						}
+					</form>
+				}
+				if user.CanEdit {
+					<div x-data="{ editModal: false }">
+						@ui.IconButton(ui.ButtonProps{
+							Variant: ui.ButtonGhost,
+							Size:    ui.ButtonSM,
+							Attrs:   templ.Attributes{"@click": "editModal = true"},
+						}) {
+							@icons.Edit("w-4 h-4")
+						}
+						@ui.Modal(ui.ModalProps{Title: fmt.Sprintf("EDIT %s", user.Username), OpenExpr: "editModal"}) {
+							<form
+								hx-put={ "/settings/users/" + user.ID }
+								hx-target={ "#user-" + user.ID }
+								hx-swap="outerHTML"
+								@htmx:after-request="if(event.detail.successful) editModal = false"
+								{ ui.WithLoading("edit-user-indicator")... }
+							>
+								@CSRF(csrf)
+								<!-- IDENTITY: stacked on mobile, two columns on >=sm -->
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									@ui.Input(ui.InputProps{
+										Name: "username", Type: ui.InputText,
+										Label: "USERNAME", Required: true,
+										Attrs: templ.Attributes{"value": user.Username, "autocomplete": "username"},
+									})
+									@ui.Input(ui.InputProps{
+										Name: "email", Type: ui.InputEmail,
+										Label: "EMAIL", Required: true,
+										Attrs: templ.Attributes{"value": user.Email, "autocomplete": "email"},
+									})
+								</div>
+								<!-- ROLE + STATUS: stacked on mobile, two columns on >=sm.
+             Switch is wrapped in a labelled box so it visually balances the
+             dropdown on the same row at >=sm. -->
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+									@ui.Droplist(ui.DroplistProps{
+										Name: "role", Label: "ROLE", Selected: user.Role, Required: true,
+										Opts: []ui.DropOption{
+											{Value: "USER", Label: "USER"},
+											{Value: "ADMIN", Label: "ADMIN"},
+											// DEVELOPER intentionally omitted — gate server-side via authz.AllowedRoles(viewer)
+										},
+									})
+									<div>
+										@ui.FieldLabel("STATUS", "")
+										<div class="cp-field clip-tag">
+											@ui.Switch(ui.SwitchProps{
+												Name: "active", Label: "Active",
+												Checked: user.Status == "Active",
+											})
+										</div>
+									</div>
+								</div>
+								<!-- PASSWORD: full width. Hint clarifies it's optional on edit. -->
+								@ui.SecurePasswordInput(ui.PasswordProps{
+									Name:         "newPassword",
+									Label:        "NEW PASSWORD",
+									Placeholder:  "Leave blank to keep current",
+									ShowStrength: true,
+								})
+								<!-- ADMIN CONFIRMATION: re-auth required to perform the change.
+             Visually separated so users see it as a security gate, not a field. -->
+								<div class="border-t border-border pt-4">
+									@ui.SecurePasswordInput(ui.PasswordProps{
+										Name:     "adminPassword",
+										Label:    "CONFIRM YOUR ADMIN PASSWORD",
+										Required: true,
+									})
+								</div>
+								<!-- FOOTER: buttons stacked full-width on mobile (thumb reach),
+             right-aligned row on >=sm. flex-col-reverse puts the destructive
+             confirm button above CANCEL on mobile, matching iOS HIG. -->
+								<div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+									@ui.Button(ui.ButtonProps{
+										Variant: ui.ButtonGhost, Size: ui.ButtonSM,
+										Attrs: templ.Attributes{"@click": "editModal = false", "type": "button"},
+									}) {
+										CANCEL
+									}
+									@ui.Button(ui.ButtonProps{
+										Variant: ui.ButtonPrimary, Size: ui.ButtonSM, Type: ui.TypeSubmit,
+										Loading: ui.LoadingConfig{IndicatorID: "edit-user-indicator"},
+									}) {
+										UPDATE USER
+									}
+								</div>
+							</form>
+						}
+					</div>
+				}
+				if user.CanDelete {
+					<div x-data="{ confirmDeleteModal: false }">
+						@ui.IconButton(ui.ButtonProps{
+							Variant: ui.ButtonGhostDanger,
+							Size:    ui.ButtonSM,
+							Attrs:   templ.Attributes{"@click": "confirmDeleteModal = true"},
+						}) {
+							@icons.Trash("w-4 h-4")
+						}
+						@ui.Modal(ui.ModalProps{Title: fmt.Sprintf("CONFIRM DELETE %s", user.Username), OpenExpr: "confirmDeleteModal"}) {
+							<p class="font-mono text-sm">Are you sure you want to delete this user?</p>
+							<form
+								hx-delete={ "/settings/users/" + user.ID }
+								hx-target={ "#user-" + user.ID }
+								hx-swap="outerHTML"
+								@htmx:after-request="if(event.detail.successful) confirmDeleteModal = false"
+								{ ui.WithLoading("delete-user-indicator")... }
+							>
+								@CSRF(csrf)
+								@ui.SecurePasswordInput(ui.PasswordProps{
+									Name:     "password",
+									Label:    "Confirm Your Password",
+									Required: true,
+								})
+								<div class="mt-4 flex justify-end gap-2">
+									@ui.Button(ui.ButtonProps{
+										Variant: ui.ButtonGhost, Size: ui.ButtonSM,
+										Attrs: templ.Attributes{"@click": "confirmDeleteModal = false"},
+									}) {
+										CANCEL
+									}
+									@ui.Button(ui.ButtonProps{
+										Variant: ui.ButtonDanger,
+										Size:    ui.ButtonSM,
+										Type:    ui.TypeSubmit,
+										Loading: ui.LoadingConfig{
+											IndicatorID: "delete-user-indicator",
+										},
+									}) {
+										DELETE USER
+									}
+								</div>
+							</form>
+						}
+					</div>
+				}
+			</div>
+		</div>
+		<!-- Bottom row is now just 2 badges + timestamp. Always fits on one line, even on mobile. -->
+		<div class="mt-3 flex items-center gap-2 text-xs">
+			@RoleBadge(user.Role)
+			if !user.Verified {
+				@ui.Badge(ui.BadgeError, true) {
+					UNVERIFIED
+				}
+			}
+			<span class="text-primary/50 ml-auto truncate">{ user.LastLogin }</span>
+		</div>
+	</div>
+}
+
+templ StatusBadge(status string) {
+	if status == "Active" {
+		<span class="inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">{ status }</span>
+	} else {
+		<span class="inline-flex items-center rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">{ status }</span>
+	}
+}
+
+templ UsersPagination(total int, page int, perPage int, oob bool) {
+	<div
+		id="users-pagination"
+		if oob {
+			hx-swap-oob="true"
+		}
+		class="px-4 sm:px-6 py-4 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-3"
+	>
+		<p class="text-sm text-primary/60">
+			Showing <span class="font-medium text-primary">{ strconv.Itoa((page-1)*perPage + 1) }-{ strconv.Itoa(min(page*perPage, total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(total) }</span>
+		</p>
+		<div class="flex items-center gap-1">
+			@ui.Pagination(ui.PaginationProps{
+				Current:    page,
+				TotalRows:  total,
+				TotalPages: (total + perPage - 1) / perPage,
+				Window:     perPage,
+				URL:        "/search/users",
+				Target:     "users-list",
+				Swap:       "innerHTML",
+				Include:    "[name='search'], [name='role_filter']",
+				PushURL:    false,
+			})
+		</div>
+	</div>
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

@@ -1,0 +1,22 @@
+package components
+
+templ EmptyState(show bool, oob bool, message string) {
+	// Empty message with OOB swap attribute
+	if show {
+		<p
+			id="empty-state"
+			if oob {
+				hx-swap-oob="outerHTML"
+			}
+			class="text-std/60 text-center py-8"
+		>{ message }</p>
+	} else {
+		<p
+			id="empty-state"
+			class="hidden"
+			if oob {
+				hx-swap-oob="outerHTML"
+			}
+		></p>
+	}
+}

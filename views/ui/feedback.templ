@@ -1,0 +1,259 @@
+package ui
+
+// ProgressBarProps — determinate-or-indeterminate progress bar.
+type ProgressBarProps struct {
+	Label         string
+	Value         int // 0..100
+	Indeterminate bool
+	ShowValue     bool
+}
+
+templ ProgressBar(p ProgressBarProps) {
+	<div>
+		if p.Label != "" || p.ShowValue {
+			<div class="flex justify-between text-sm mb-1.5">
+				<span class="text-fg">{ p.Label }</span>
+				if p.Indeterminate {
+					<span class="text-muted">Working…</span>
+				} else if p.ShowValue {
+					<span class="text-primary font-medium">{ itoa(p.Value) }%</span>
+				}
+			</div>
+		}
+		if p.Indeterminate {
+			<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+				<span style="width:33%;animation: marquee 1.6s linear infinite"></span>
+			</div>
+		} else {
+			<div class="bar" role="progressbar" aria-valuenow={ itoa(p.Value) } aria-valuemin="0" aria-valuemax="100">
+				<span style={ "width:" + itoa(p.Value) + "%" }></span>
+			</div>
+		}
+	</div>
+}
+
+// ProgressRingProps — circular progress with centre label.
+type ProgressRingProps struct {
+	Value int
+	Size  int
+	Label string
+	Note  string
+}
+
+templ ProgressRing(p ProgressRingProps) {
+	{{ size := nonZero(p.Size, 96) }}
+	<div class="flex items-center gap-4">
+		<svg class="-rotate-90" width={ itoa(size) } height={ itoa(size) } viewBox="0 0 100 100" role="img" aria-label="progress">
+			<circle cx="50" cy="50" r="42" fill="none" stroke="var(--color-border)" stroke-width="8"></circle>
+			<circle
+				cx="50"
+				cy="50"
+				r="42"
+				fill="none"
+				stroke="var(--color-primary)"
+				stroke-width="8"
+				stroke-linecap="round"
+				pathLength="100"
+				stroke-dasharray={ itoa(p.Value) + " 100" }
+				style="transition: stroke-dasharray .4s ease;"
+			></circle>
+		</svg>
+		<div>
+			if p.Label != "" {
+				<div class="text-xs text-muted uppercase tracking-wide">{ p.Label }</div>
+			}
+			<div class="text-3xl font-bold text-fg">{ itoa(p.Value) }%</div>
+			if p.Note != "" {
+				<div class="text-xs text-muted">{ p.Note }</div>
+			}
+		</div>
+	</div>
+}
+
+// AlertKind picks the palette.
+type AlertKind string
+
+const (
+	AlertSuccess AlertKind = "success"
+	AlertWarning AlertKind = "warning"
+	AlertError   AlertKind = "error"
+	AlertInfo    AlertKind = "info"
+)
+
+func alertClasses(k AlertKind) (border, textHeader string) {
+	switch k {
+	case AlertSuccess:
+		return "border-l-success bg-success/8", "text-success"
+	case AlertWarning:
+		return "border-l-warning bg-warning/8", "text-warning"
+	case AlertError:
+		return "border-l-error bg-error/8", "text-error"
+	default:
+		return "border-l-info bg-info/8", "text-info"
+	}
+}
+
+// Alert is a bordered panel for a short system message. Children are the body.
+templ Alert(kind AlertKind, heading string) {
+	{{ bord, head := alertClasses(kind) }}
+	<div class={ "rounded-lg border border-border border-l-4 p-3.5 text-sm", bord } role={ alertRole(kind) }>
+		<div class={ "font-semibold", head }>{ heading }</div>
+		<div class="text-fg/90 mt-0.5">
+			{ children... }
+		</div>
+	</div>
+}
+
+func alertRole(k AlertKind) string {
+	if k == AlertError || k == AlertWarning {
+		return "alert"
+	}
+	return "status"
+}
+
+// BadgeVariant picks the background palette.
+type BadgeVariant string
+
+const (
+	BadgePrimary BadgeVariant = "primary"
+	BadgeAccent  BadgeVariant = "accent"
+	BadgeError   BadgeVariant = "error"
+	BadgeMuted   BadgeVariant = "muted"
+	BadgeSuccess BadgeVariant = "success"
+	BadgeWarning BadgeVariant = "warning"
+	BadgeInfo    BadgeVariant = "info"
+)
+
+func badgeClass(v BadgeVariant, outlined bool) string {
+	switch v {
+	case BadgeAccent:
+		if outlined {
+			return "border border-accent text-accent"
+		}
+		return "bg-accent text-accent-fg"
+	case BadgeError:
+		if outlined {
+			return "border border-error text-error"
+		}
+		return "bg-error text-white"
+	case BadgeMuted:
+		return "border border-border text-muted"
+	case BadgeSuccess:
+		if outlined {
+			return "border border-success text-success"
+		}
+		return "bg-success text-white"
+	case BadgeWarning:
+		if outlined {
+			return "border border-warning text-warning"
+		}
+		return "bg-warning text-white"
+	case BadgeInfo:
+		if outlined {
+			return "border border-info text-info"
+		}
+		return "bg-info text-white"
+	}
+	if outlined {
+		return "border border-primary text-primary"
+	}
+	return "bg-primary text-primary-fg"
+}
+
+templ Badge(variant BadgeVariant, outlined bool) {
+	<span class={ "inline-flex items-center rounded-full text-xs font-medium px-2.5 py-0.5", badgeClass(variant, outlined) }>
+		{ children... }
+	</span>
+}
+
+// StatusDot is a small pulsing indicator. Kind drives colour; "offline" has no pulse.
+templ StatusDot(kind, label string) {
+	if kind == "offline" {
+		<span class="flex items-center gap-2 text-sm">
+			<span class="pulse-dot" style="background:var(--color-muted)"><span class="hidden"></span></span>
+			{ label }
+		</span>
+	} else if kind == "online" {
+		<span class="flex items-center gap-2 text-sm">
+			<span class="pulse-dot" style="background:var(--color-success)"></span>
+			{ label }
+		</span>
+	} else {
+		<span class="flex items-center gap-2 text-sm">
+			<span class="pulse-dot" style="background:var(--color-warning)"></span>
+			{ label }
+		</span>
+	}
+}
+
+// RatingProps — 1..N star input with hover preview.
+type RatingProps struct {
+	Name     string
+	Value    int
+	Max      int
+	Disabled bool
+}
+
+templ Rating(p RatingProps) {
+	{{ max := nonZero(p.Max, 5) }}
+	<div
+		x-data={ "{ r: " + itoa(p.Value) + ", hover: 0 }" }
+		class="flex gap-1 items-center"
+		role="radiogroup"
+	>
+		for i := 1; i <= max; i++ {
+			<button
+				type="button"
+				if !p.Disabled {
+					@click={ "r = " + itoa(i) }
+					@mouseenter={ "hover = " + itoa(i) }
+					@mouseleave="hover = 0"
+				}
+				:class={ "(hover || r) >= " + itoa(i) + " ? 'text-warning' : 'text-muted/40'" }
+				class="text-2xl leading-none transition"
+				aria-label={ itoa(i) + " star" }
+				:disabled={ p.Disabled }
+			>★</button>
+		}
+		<span class="ml-3 text-sm text-muted" x-text={ "r + '/" + itoa(max) + "'" }></span>
+		<input type="hidden" name={ p.Name } :value="r"/>
+	</div>
+}
+
+// ToastStack renders messages pushed via `$root.pushToast(kind, msg)`. The
+// Alpine state for `toasts` + `pushToast` is defined on <body> in the layout.
+templ ToastStack() {
+	<div class="fixed z-70 top-20 right-4 flex flex-col gap-2 w-[min(92vw,320px)]" aria-live="polite" aria-atomic="false">
+		<template x-for="t in toasts" :key="t.id">
+			<div
+				class="toast-in card shadow-lg p-3.5 border-l-4 flex items-start gap-3"
+				:class="{
+					'border-l-success': t.kind==='success',
+					'border-l-error':   t.kind==='error',
+					'border-l-warning': t.kind==='warning',
+					'border-l-info':    t.kind==='info'
+				}"
+				role="status"
+			>
+				<span
+					class="pulse-dot mt-1.5"
+					:style="`background: var(--color-${t.kind});`"
+				></span>
+				<div class="flex-1 min-w-0">
+					<div
+						class="text-xs font-semibold uppercase tracking-wide"
+						:class="{
+							'text-success': t.kind==='success',
+							'text-error':   t.kind==='error',
+							'text-warning': t.kind==='warning',
+							'text-info':    t.kind==='info'
+						}"
+						x-text="t.kind"
+					></div>
+					<div class="text-sm text-fg" x-text="t.msg"></div>
+				</div>
+				<button @click="toasts = toasts.filter(x => x.id !== t.id)" class="text-muted hover:text-error" aria-label="Dismiss">✕</button>
+			</div>
+		</template>
+	</div>
+}

@@ -1,0 +1,27 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+)
+
+templ TwoFAReset(site config.Site, token string) {
+	@layouts.Base(site) {
+		<main class="min-h-screen bg-std flex items-center justify-center p-4">
+			<div class="w-full max-w-md" id="reset-container">
+				@components.TwoFAResetWithCode(token, site.CSRF)
+			</div>
+		</main>
+	}
+}
+
+templ TwoFARestore(site config.Site) {
+	@layouts.Base(site) {
+		<main class="min-h-screen bg-std flex items-center justify-center p-4">
+			<div class="w-full max-w-md" id="reset-container">
+				@components.TwoFARestoreWithEmail(site.CSRF)
+			</div>
+		</main>
+	}
+}

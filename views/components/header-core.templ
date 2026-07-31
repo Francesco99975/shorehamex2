@@ -1,0 +1,44 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/internal/config"
+
+templ HeaderCore(site config.Site) {
+	<header class="sticky top-0 z-50 bg-primary/95 backdrop-blur-md text-std shadow-lg border-b border-accent/20" hx-boost="true" x-data="{ mobileMenuOpen: false }">
+		<div class="container mx-auto px-4 lg:px-6">
+			<div
+				class="flex items-center justify-between h-16"
+				x-data="{
+							mobileMenuOpen: false,
+							path: window.location.pathname,
+							darkMode: localStorage.getItem('darkMode') === 'true' ? true :
+									(localStorage.getItem('darkMode') === 'false' ? false :
+									window.matchMedia('(prefers-color-scheme: dark)').matches)
+  						}"
+				x-init="
+					if(darkMode) {
+						document.documentElement.classList.add('dark');
+					} else {
+						document.documentElement.classList.remove('dark');
+					}
+
+					$watch('darkMode', val => {
+						localStorage.setItem('darkMode', val);
+						if(val) {
+							document.documentElement.classList.add('dark');
+						} else {
+							document.documentElement.classList.remove('dark');
+						}
+					});
+
+					window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+						if (localStorage.getItem('darkMode') === null) {
+							darkMode = e.matches;
+						}
+						});
+					"
+			>
+				{ children... }
+			</div>
+		</div>
+	</header>
+}

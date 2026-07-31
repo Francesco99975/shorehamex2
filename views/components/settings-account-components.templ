@@ -1,0 +1,585 @@
+package components
+
+import (
+	"fmt"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+// ConfirmationModal - A reusable confirmation modal with Alpine.js
+// Usage: Include in page, control with x-data="{ showConfirmModal: false }"
+// Props: title, message, confirmText, cancelText, variant (danger/warning/info)
+type ConfirmModalProps struct {
+	ID          string
+	Title       string
+	Message     string
+	ConfirmText string
+	CancelText  string
+	Variant     string // "danger", "warning", "info"
+	FormAction  string
+	FormTarget  string
+	CSRF        string
+	ExtraFields templ.Component
+}
+
+templ ConfirmationModal(props ConfirmModalProps) {
+	<div
+		x-show={ "show" + props.ID }
+		x-cloak
+		class="fixed inset-0 z-50 overflow-y-auto"
+		aria-labelledby="modal-title"
+		role="dialog"
+		aria-modal="true"
+	>
+		<!-- Backdrop -->
+		<div
+			x-show={ "show" + props.ID }
+			x-transition:enter="transition ease-out duration-200"
+			x-transition:enter-start="opacity-0"
+			x-transition:enter-end="opacity-100"
+			x-transition:leave="transition ease-in duration-150"
+			x-transition:leave-start="opacity-100"
+			x-transition:leave-end="opacity-0"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+			@click={ "show" + props.ID + " = false" }
+		></div>
+		<!-- Modal Panel -->
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div
+				x-show={ "show" + props.ID }
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+				x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+				x-transition:leave="transition ease-in duration-150"
+				x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+				x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+				class="relative w-full max-w-md rounded-2xl bg-std shadow-2xl border border-primary/10"
+				@click.stop
+			>
+				<!-- Header -->
+				<div class={ "px-6 py-5 border-b rounded-t-2xl", templ.KV("border-error/20 bg-error/5", props.Variant == "danger"), templ.KV("border-warning/20 bg-warning/5", props.Variant == "warning"), templ.KV("border-primary/10 bg-primary/5", props.Variant == "info") }>
+					<div class="flex items-center gap-4">
+						<div class={ "shrink-0 h-12 w-12 rounded-full flex items-center justify-center", templ.KV("bg-error/10", props.Variant == "danger"), templ.KV("bg-warning/10", props.Variant == "warning"), templ.KV("bg-primary/10", props.Variant == "info") }>
+							if props.Variant == "danger" {
+								@icons.AlertCircle("w-6 h-6 text-error")
+							} else if props.Variant == "warning" {
+								@icons.AlertCircle("w-6 h-6 text-warning")
+							} else {
+								@icons.AlertCircle("w-6 h-6 text-primary")
+							}
+						</div>
+						<div>
+							<h3 id="modal-title" class={ "text-lg font-semibold", templ.KV("text-error", props.Variant == "danger"), templ.KV("text-warning", props.Variant == "warning"), templ.KV("text-primary", props.Variant == "info") }>
+								{ props.Title }
+							</h3>
+						</div>
+					</div>
+				</div>
+				<!-- Body -->
+				<div class="px-6 py-5">
+					<p class="text-sm text-primary/70 leading-relaxed">{ props.Message }</p>
+					if props.ExtraFields != nil {
+						<div class="mt-4">
+							@props.ExtraFields
+						</div>
+					}
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 border-t border-primary/10 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+					<button
+						type="button"
+						@click={ "show" + props.ID + " = false" }
+						class="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-primary/20 text-primary font-medium text-sm hover:bg-primary/5 transition-all"
+					>
+						{ props.CancelText }
+					</button>
+					<form
+						hx-post={ props.FormAction }
+						hx-target={ props.FormTarget }
+						hx-swap="innerHTML"
+						{ ui.WithLoading(props.ID + "-indicator")... }
+						@htmx:after-request={ "show" + props.ID + " = false" }
+					>
+						@CSRF(props.CSRF)
+						<button
+							type="submit"
+							class={ "w-full sm:w-auto px-5 py-2.5 rounded-lg font-medium text-sm transition-all relative", templ.KV("bg-error text-white hover:bg-error/90", props.Variant == "danger"), templ.KV("bg-warning text-white hover:bg-warning/90", props.Variant == "warning"), templ.KV("bg-primary text-white hover:bg-primary/90", props.Variant == "info") }
+						>
+							<span>{ props.ConfirmText }</span>
+							<div id={ props.ID + "-indicator" } class={ "htmx-indicator absolute inset-0 flex items-center justify-center rounded-lg", templ.KV("bg-error", props.Variant == "danger"), templ.KV("bg-warning", props.Variant == "warning"), templ.KV("bg-primary", props.Variant == "info") }>
+								@icons.Loading("w-5 h-5 text-white animate-spin")
+							</div>
+						</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// DeleteConfirmationModal - A modal that requires email confirmation before deletion
+type DeleteConfirmModalProps struct {
+	UserEmail    string
+	TwoFAEnabled bool
+	CSRF         string
+	FormAction   string
+	FormTarget   string
+}
+
+templ DeleteConfirmationModal(props DeleteConfirmModalProps) {
+	<div
+		x-show="showDeleteModal"
+		x-cloak
+		class="fixed inset-0 z-50 overflow-y-auto"
+		aria-labelledby="delete-modal-title"
+		role="dialog"
+		aria-modal="true"
+	>
+		<!-- Backdrop -->
+		<div
+			x-show="showDeleteModal"
+			x-transition:enter="transition ease-out duration-200"
+			x-transition:enter-start="opacity-0"
+			x-transition:enter-end="opacity-100"
+			x-transition:leave="transition ease-in duration-150"
+			x-transition:leave-start="opacity-100"
+			x-transition:leave-end="opacity-0"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+			@click="showDeleteModal = false; emailConfirm = ''; passwordConfirm = '', otpConfirm = ''"
+		></div>
+		<!-- Modal Panel -->
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div
+				x-show="showDeleteModal"
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+				x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+				x-transition:leave="transition ease-in duration-150"
+				x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+				x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+				class="relative w-full max-w-md rounded-2xl bg-std shadow-2xl border border-error/30"
+				@click.stop
+			>
+				<!-- Header -->
+				<div class="px-6 py-5 border-b border-error/20 bg-error/5 rounded-t-2xl">
+					<div class="flex items-center gap-4">
+						<div class="shrink-0 h-12 w-12 rounded-full bg-error/10 flex items-center justify-center">
+							@icons.Trash("w-6 h-6 text-error")
+						</div>
+						<div>
+							<h3 id="delete-modal-title" class="text-lg font-semibold text-error">Delete Account Permanently</h3>
+							<p class="text-sm text-error/70">This action cannot be undone</p>
+						</div>
+					</div>
+				</div>
+				<!-- Body -->
+				<div class="px-6 py-5 space-y-4">
+					<div class="p-4 rounded-lg bg-error/5 border border-error/20">
+						<p class="text-sm text-error font-medium mb-2">Warning: Permanent Deletion</p>
+						<ul class="text-sm text-error/80 space-y-1 list-disc list-inside">
+							<li>All your personal data will be deleted</li>
+							<li>Your account cannot be recovered</li>
+							<li>Any active sessions will be terminated</li>
+						</ul>
+					</div>
+					@ui.Input(ui.InputProps{
+						Name:     "emailConfirm",
+						Label:    fmt.Sprintf("To confirm, type your email: (%s)", props.UserEmail),
+						Required: true,
+						Danger:   true,
+						Hint:     "Enter your email to confirm",
+						Attrs: templ.Attributes{
+							"x-model": "emailConfirm",
+						},
+					})
+					@ui.SecurePasswordInput(ui.PasswordProps{
+						Name:     "passwordConfirm",
+						Label:    "Enter your password to authorize deletion",
+						Required: true,
+					})
+					if props.TwoFAEnabled {
+						@ui.OTPSingleInput(ui.OTPSingleProps{
+							Name:       "otp",
+							Label:      "One Time Password",
+							Required:   true,
+							AutoSubmit: false,
+							Attrs: templ.Attributes{
+								"x-model": "otpConfirm",
+							},
+						})
+					}
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 border-t border-error/20 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonGhost,
+						Size:    ui.ButtonMD,
+						Type:    ui.TypeButton,
+						FullW:   false,
+						Attrs: templ.Attributes{
+							"@click": "showDeleteModal = false; emailConfirm = ''; passwordConfirm = ''",
+						},
+					}) {
+						<span>Cancel</span>
+					}
+					<form
+						hx-delete={ props.FormAction }
+						hx-swap="none"
+						{ ui.WithLoading("delete-account-indicator")... }
+						@htmx:after-request="showDeleteModal = false; emailConfirm = ''; passwordConfirm = ''"
+					>
+						@CSRF(props.CSRF)
+						@ui.DynamicHiddenInput("password", "passwordConfirm")
+						if props.TwoFAEnabled {
+							@ui.DynamicHiddenInput("otp", "otpConfirm")
+						}
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonDanger,
+							Size:    ui.ButtonLG,
+							Type:    ui.TypeSubmit,
+							Loading: ui.LoadingConfig{IndicatorID: "delete-account-indicator"},
+							Attrs: templ.Attributes{
+								":disabled": "emailConfirm !== '" + props.UserEmail + "' || passwordConfirm === ''",
+								":class":    "emailConfirm !== '" + props.UserEmail + "' || passwordConfirm === '' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-error/90'",
+							},
+						}) {
+							<span>Delete My Account</span>
+						}
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+type AccountProps struct {
+	IsActive     bool
+	TwoFAEnabled bool
+	UserEmail    string
+	CSRF         string
+}
+
+templ SettingsAccountTab(props AccountProps) {
+	<div
+		x-data="{ showDeactivateModal: false, showActivateModal: false, showDeleteModal: false, emailConfirm: '', passwordConfirm: '', otpConfirm: '' }"
+		class="space-y-4"
+	>
+		@AccountStatusCard(props.IsActive, false)
+		@DangerZoneCard(props.IsActive, props.CSRF)
+		<!-- Deactivate/Activate Confirmation Modal -->
+		@DeactivateModal(props.CSRF)
+		@ActivateModal(props.CSRF)
+		<!-- Delete Confirmation Modal -->
+		@DeleteConfirmationModal(DeleteConfirmModalProps{
+			UserEmail:    props.UserEmail,
+			TwoFAEnabled: props.TwoFAEnabled,
+			CSRF:         props.CSRF,
+			FormAction:   "/settings/account/delete",
+			FormTarget:   "#delete-response",
+		})
+	</div>
+}
+
+templ AccountStatusCard(isActive bool, oob bool) {
+	<div
+		id="account-status-card"
+		if oob {
+			hx-swap-oob="outerHTML:#account-status-card"
+		}
+		class="rounded-xl border border-primary/10 bg-std shadow-sm"
+	>
+		<div class="border-b border-primary/10 px-4 sm:px-6 py-4">
+			<h2 class="text-base sm:text-lg font-semibold text-primary">Account Status</h2>
+			<p class="text-sm text-primary/60">Your current account status</p>
+		</div>
+		<div class="p-4 sm:p-6">
+			if isActive {
+				<div class="flex items-center gap-3 sm:gap-4 p-4 rounded-lg bg-success/5 border border-success/20">
+					<div class="shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-success/10 flex items-center justify-center">
+						@icons.CheckCircle("w-5 h-5 sm:w-6 sm:h-6 text-success")
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold text-primary">Account Active</h3>
+						<p class="text-sm text-primary/60">Your account is in good standing</p>
+					</div>
+				</div>
+			} else {
+				<div class="flex items-center gap-3 sm:gap-4 p-4 rounded-lg bg-error/5 border border-error/20">
+					<div class="shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-error/10 flex items-center justify-center">
+						@icons.AlertCircle("w-5 h-5 sm:w-6 sm:h-6 text-error")
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold text-primary">Account Inactive</h3>
+						<p class="text-sm text-primary/60">Your account has been deactivated</p>
+					</div>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ DangerZoneCard(isActive bool, csrf string) {
+	<div
+		id="danger-zone-card"
+		class="rounded-xl border border-error/30 bg-std shadow-sm"
+	>
+		<div class="border-b border-error/20 px-4 sm:px-6 py-4 bg-error/5 rounded-t-xl">
+			<h2 class="text-base sm:text-lg font-semibold text-error">Danger Zone</h2>
+			<p class="text-sm text-error/70">Irreversible actions</p>
+		</div>
+		<div class="p-4 sm:p-6 space-y-3">
+			<!-- Deactivate/Activate Section -->
+			@DeactivateSection(isActive, csrf, false)
+			<!-- Delete Section -->
+			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-error/30 bg-error/5">
+				<div>
+					<h3 class="text-sm font-semibold text-error">Delete Account</h3>
+					<p class="text-sm text-error/70">Permanently delete all data</p>
+				</div>
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonDanger,
+					Size:    ui.ButtonMD,
+					Type:    ui.TypeButton,
+					FullW:   false,
+					Attrs: templ.Attributes{
+						"@click": "showDeleteModal = true",
+					},
+				}) {
+					<span>Delete Account</span>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ DeactivateSection(isActive bool, csrf string, oob bool) {
+	<div
+		id="deactivate-section"
+		if oob {
+			hx-swap-oob="outerHTML:#deactivate-section"
+		}
+		class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-primary/10"
+	>
+		<div>
+			if isActive {
+				<h3 class="text-sm font-semibold text-primary">Deactivate Account</h3>
+				<p class="text-sm text-primary/60">Temporarily disable your account</p>
+			} else {
+				<h3 class="text-sm font-semibold text-success">Activate Account</h3>
+				<p class="text-sm text-primary/60">Reactivate your account</p>
+			}
+		</div>
+		if isActive {
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonGhostDanger,
+				Size:    ui.ButtonMD,
+				Type:    ui.TypeButton,
+				FullW:   false,
+				Attrs: templ.Attributes{
+					"@click": "showDeactivateModal = true",
+				},
+			}) {
+				<span>Deactivate</span>
+			}
+		} else {
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonGhostSuccess,
+				Size:    ui.ButtonMD,
+				Type:    ui.TypeButton,
+				FullW:   false,
+				Attrs: templ.Attributes{
+					"@click": "showActivateModal = true",
+				},
+			}) {
+				<span>Activate</span>
+			}
+		}
+	</div>
+}
+
+templ DeactivateModal(csrf string) {
+	<div
+		x-show="showDeactivateModal"
+		x-cloak
+		class="fixed inset-0 z-50 overflow-y-auto"
+		aria-labelledby="deactivate-modal-title"
+		role="dialog"
+		aria-modal="true"
+	>
+		<!-- Backdrop -->
+		<div
+			x-show="showDeactivateModal"
+			x-transition:enter="transition ease-out duration-200"
+			x-transition:enter-start="opacity-0"
+			x-transition:enter-end="opacity-100"
+			x-transition:leave="transition ease-in duration-150"
+			x-transition:leave-start="opacity-100"
+			x-transition:leave-end="opacity-0"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+			@click="showDeactivateModal = false"
+		></div>
+		<!-- Modal Panel -->
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div
+				x-show="showDeactivateModal"
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+				x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+				x-transition:leave="transition ease-in duration-150"
+				x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+				x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+				class="relative w-full max-w-md rounded-2xl bg-std shadow-2xl border border-error/30"
+				@click.stop
+			>
+				<!-- Header -->
+				<div class="px-6 py-5 border-b rounded-t-2xl border-error/20 bg-error/5">
+					<div class="flex items-center gap-4">
+						<div class="shrink-0 h-12 w-12 rounded-full flex items-center justify-center bg-error/10">
+							@icons.AlertCircle("w-6 h-6 text-error")
+						</div>
+						<div>
+							<h3 id="deactivate-modal-title" class="text-lg font-semibold text-error">Deactivate Account</h3>
+							<p class="text-sm text-error/70">Temporarily disable your account</p>
+						</div>
+					</div>
+				</div>
+				<!-- Body -->
+				<div class="px-6 py-5">
+					<p class="text-sm text-primary/70 leading-relaxed mb-4">
+						Are you sure you want to deactivate your account? While deactivated:
+					</p>
+					<ul class="text-sm text-primary/60 space-y-2 list-disc list-inside">
+						<li>You won't be able to log in</li>
+						<li>Your data will be preserved</li>
+						<li>You can reactivate anytime</li>
+					</ul>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 border-t flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl border-error/20">
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonGhost,
+						Size:    ui.ButtonMD,
+						Type:    ui.TypeButton,
+						FullW:   false,
+						Attrs: templ.Attributes{
+							"@click": "showDeactivateModal = false",
+						},
+					}) {
+						<span>Cancel</span>
+					}
+					<form
+						hx-delete="/settings/account/deactivate"
+						hx-swap="none"
+						{ ui.WithLoading("deactivate-modal-indicator")... }
+						@htmx:after-request="showDeactivateModal = false"
+					>
+						@CSRF(csrf)
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonDanger,
+							Size:    ui.ButtonMD,
+							Type:    ui.TypeSubmit,
+							FullW:   true,
+							Loading: ui.LoadingConfig{
+								IndicatorID: "deactivate-modal-indicator",
+							},
+						}) {
+							<span>Deactivate</span>
+						}
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+templ ActivateModal(csrf string) {
+	<div
+		x-show="showActivateModal"
+		x-cloak
+		class="fixed inset-0 z-50 overflow-y-auto"
+		aria-labelledby="activate-modal-title"
+		role="dialog"
+		aria-modal="true"
+	>
+		<!-- Backdrop -->
+		<div
+			x-show="showActivateModal"
+			x-transition:enter="transition ease-out duration-200"
+			x-transition:enter-start="opacity-0"
+			x-transition:enter-end="opacity-100"
+			x-transition:leave="transition ease-in duration-150"
+			x-transition:leave-start="opacity-100"
+			x-transition:leave-end="opacity-0"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+			@click="showActivateModal = false"
+		></div>
+		<!-- Modal Panel -->
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div
+				x-show="showActivateModal"
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+				x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+				x-transition:leave="transition ease-in duration-150"
+				x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+				x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+				class="relative w-full max-w-md rounded-2xl bg-std shadow-2xl border border-success/30"
+				@click.stop
+			>
+				<!-- Header -->
+				<div class="px-6 py-5 border-b rounded-t-2xl border-success/20 bg-success/5">
+					<div class="flex items-center gap-4">
+						<div class="shrink-0 h-12 w-12 rounded-full flex items-center justify-center bg-success/10">
+							@icons.CheckCircle("w-6 h-6 text-success")
+						</div>
+						<div>
+							<h3 id="activate-modal-title" class="text-lg font-semibold text-success">Activate Account</h3>
+							<p class="text-sm text-success/70">Reactivate your account</p>
+						</div>
+					</div>
+				</div>
+				<!-- Body -->
+				<div class="px-6 py-5">
+					<p class="text-sm text-primary/70 leading-relaxed mb-4">
+						Would you like to reactivate your account? Once activated:
+					</p>
+					<ul class="text-sm text-primary/60 space-y-2 list-disc list-inside">
+						<li>You'll have full access again</li>
+						<li>All your data will be restored</li>
+						<li>Your account will be in good standing</li>
+					</ul>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 border-t flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl border-success/20">
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonGhost,
+						Size:    ui.ButtonMD,
+						Type:    ui.TypeButton,
+						Attrs:   templ.Attributes{"@click": "showActivateModal = false"},
+					}) {
+						<span>Cancel</span>
+					}
+					<form
+						hx-post="/settings/account/activate"
+						hx-swap="none"
+						{ ui.WithLoading("activate-modal-indicator")... }
+						@htmx:after-request="showActivateModal = false"
+					>
+						@CSRF(csrf)
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonAccent,
+							Size:    ui.ButtonMD,
+							Type:    "submit",
+							FullW:   true,
+							Loading: ui.LoadingConfig{
+								IndicatorID: "activate-modal-indicator",
+							},
+						}) {
+							<span>Reactivate Account</span>
+						}
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+}

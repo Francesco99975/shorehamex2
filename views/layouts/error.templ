@@ -1,0 +1,16 @@
+package layouts
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ Error(site config.Site, title string) {
+	@CoreHTML(site) {
+		<div class="min-h-screen flex flex-col">
+			@ui.ErrorHeader(title)
+			{ children... }
+			@ui.ErrorFooter(title)
+		</div>
+	}
+}

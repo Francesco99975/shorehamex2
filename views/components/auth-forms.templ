@@ -1,0 +1,114 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+import "github.com/Francesco99975/shorehamex2/views/ui"
+
+templ EmailVerification(email string, csrf string, verify_url string) {
+	<div id="email-verification-container" class="bg-std rounded-2xl shadow-xl p-8 max-w-md w-full mx-auto">
+		<div class="text-center mb-6">
+			<div class="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
+				@icons.EmailVerifyIcon()
+			</div>
+			<h2 class="text-2xl font-bold text-primary mb-2">Verify Your Email</h2>
+			<p class="text-primary/70">
+				We've sent a verification email to <span class="font-semibold text-primary">{ email }</span>
+			</p>
+		</div>
+		<div class="bg-std/50 rounded-xl p-6 mb-6 border border-primary/10">
+			<h3 class="font-semibold text-primary mb-3 flex items-center gap-2">
+				@icons.Info("w-5 h-5 text-primary")
+				Two ways to verify:
+			</h3>
+			<ol class="space-y-2 text-sm text-primary/80">
+				<li class="flex items-start gap-2">
+					<span class="font-bold text-primary min-w-[20px]">1.</span>
+					<span>Click the <strong>verification link</strong> in your email</span>
+				</li>
+				<li class="flex items-start gap-2">
+					<span class="font-bold text-primary min-w-[20px]">2.</span>
+					<span>Or enter the <strong>verification code</strong> below</span>
+				</li>
+			</ol>
+		</div>
+		<form
+			hx-post={ verify_url }
+			hx-target="#email-verification-container"
+			hx-swap="outerHTML"
+			{ ui.WithLoading("verify-spinner")... }
+			@submit="verifying = true"
+			class="space-y-4"
+		>
+			@CSRF(csrf)
+			@ui.CodeInput(ui.CodeInputProps{
+				Name:     "token",
+				Label:    "Verification Code",
+				Hint:     "Check your email for the verification token",
+				Required: true,
+			})
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonPrimary,
+				FullW:   true,
+				Type:    "submit",
+				Loading: ui.LoadingConfig{
+					IndicatorID: "verify-spinner",
+				},
+				Size: ui.ButtonLG,
+			}) {
+				<span>Verify Email</span>
+			}
+		</form>
+		<div
+			class="mt-6 text-center"
+			x-data="{
+		sent: false,
+		seconds: 60,
+		interval: null,
+		startTimer() {
+			if (this.interval) clearInterval(this.interval);
+			this.sent = true;
+			this.seconds = 60;
+			this.interval = setInterval(() => {
+				this.seconds--;
+				if (this.seconds <= 0) {
+					clearInterval(this.interval);
+					this.sent = false;
+				}
+			}, 1000);
+		}
+	}"
+		>
+			<!-- Resend Form -->
+			<form
+				x-show="!sent"
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0"
+				x-transition:enter-end="opacity-100"
+				hx-post="/verification/resend"
+				hx-target="#resend-response"
+				hx-swap="innerHTML"
+				@htmx:after-request="startTimer()"
+			>
+				@ui.HiddenInput("email", email)
+				@CSRF(csrf)
+				<button
+					type="submit"
+					class="text-sm text-primary hover:underline"
+				>
+					Didn't receive the email? Resend
+				</button>
+			</form>
+			<!-- Timer Display -->
+			<div
+				x-show="sent"
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0"
+				x-transition:enter-end="opacity-100"
+				class="flex items-center gap-2 text-sm text-gray-500"
+			>
+				@icons.Loading("w-4 h-4 animate-spin text-primary")
+				<span>Resend available in <span x-text="seconds" class="font-semibold text-primary"></span>s</span>
+			</div>
+			<div id="resend-response"></div>
+		</div>
+	</div>
+}

@@ -1,0 +1,497 @@
+@import "tailwindcss";
+
+@source "../../src/**/*.{js,ts}";
+@source "../../../views/**/*.templ";
+
+/* ============================================================= */
+/* LIGHT THEME                                                    */
+/* ============================================================= */
+@theme {
+    --color-std: oklch(97.5% 0.012 155);
+    --color-panel: oklch(99.3% 0.006 155);
+    --color-border: oklch(88% 0.02 150);
+    --color-fg: oklch(24% 0.03 158);
+    --color-muted: oklch(47% 0.03 152);
+
+    --color-primary: oklch(45% 0.11 152);
+    --color-primary-fg: oklch(98.5% 0.01 155);
+    --color-accent: oklch(63% 0.14 150);
+    --color-accent-fg: oklch(20% 0.04 158);
+
+    --color-success: oklch(56% 0.15 150);
+    --color-error: oklch(55% 0.2 25);
+    --color-warning: oklch(70% 0.15 75);
+    --color-info: oklch(58% 0.12 220);
+
+    /* Conventional aliases — the baseui components use mainstream token names
+       (foreground / surface / background / primary-foreground / ring). These
+       point at the same values as the cyberpunk-compatible names above so both
+       naming schemes resolve to one palette. Change a value once, both update. */
+    --color-background: var(--color-std);
+    --color-surface: var(--color-panel);
+    --color-foreground: var(--color-fg);
+    --color-primary-foreground: var(--color-primary-fg);
+    --color-accent-foreground: var(--color-accent-fg);
+    --color-ring: var(--color-primary);
+
+    --font-sans: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+    /* Corner rounding scale — a single knob for the whole system. */
+    --radius: 0.75rem;
+
+    /* Soft, layered shadows for elevation (replaces neon glow). */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md:
+        0 2px 8px -1px rgb(0 0 0 / 0.08), 0 1px 3px -1px rgb(0 0 0 / 0.06);
+    --shadow-lg:
+        0 10px 24px -6px rgb(0 0 0 / 0.12), 0 4px 8px -4px rgb(0 0 0 / 0.08);
+}
+
+/* Class-based dark variant */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+        font-family: var(--font-sans);
+        transition: background-color 0.3s ease;
+        color-scheme: light;
+        background: var(--color-std);
+        color: var(--color-fg);
+    }
+    html.dark {
+        color-scheme: dark;
+    }
+
+    /* =========================================================== */
+    /* DARK THEME                                                    */
+    /* =========================================================== */
+    .dark {
+        --color-std: oklch(18% 0.022 158);
+        --color-panel: oklch(22.5% 0.028 158);
+        --color-border: oklch(32% 0.03 155);
+        --color-fg: oklch(94% 0.02 150);
+        --color-muted: oklch(70% 0.03 150);
+
+        --color-primary: oklch(74% 0.15 150);
+        --color-primary-fg: oklch(16% 0.03 158);
+        --color-accent: oklch(82% 0.13 150);
+        --color-accent-fg: oklch(16% 0.03 158);
+
+        --color-success: oklch(78% 0.18 150);
+        --color-error: oklch(70% 0.2 22);
+        --color-warning: oklch(82% 0.16 80);
+        --color-info: oklch(75% 0.13 225);
+
+        --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+        --shadow-md:
+            0 2px 8px -1px rgb(0 0 0 / 0.5), 0 1px 3px -1px rgb(0 0 0 / 0.4);
+        --shadow-lg:
+            0 10px 24px -6px rgb(0 0 0 / 0.6), 0 4px 8px -4px rgb(0 0 0 / 0.5);
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
+
+    ::-webkit-scrollbar {
+        width: 9px;
+        height: 9px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: color-mix(in oklab, var(--color-accent) 40%, transparent);
+        border-radius: 6px;
+    }
+
+    body {
+        min-height: 100vh;
+        background: var(--color-std);
+        color: var(--color-fg);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    button {
+        cursor: pointer;
+    }
+    input,
+    textarea {
+        cursor: text;
+    }
+    select,
+    input[type="checkbox"],
+    input[type="radio"],
+    input[type="file"],
+    input[type="range"] {
+        cursor: pointer;
+    }
+
+    /* HTMX in-flight indicator fade. */
+    .htmx-indicator {
+        opacity: 0;
+        transition: opacity 0.2s ease-in;
+    }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+        opacity: 1;
+    }
+
+    /* ------- Card surface (replaces clip-panel) ------- */
+    .card {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+    }
+
+    /* ------- Buttons: subtle lift + shadow on hover (replaces glow-btn) ------- */
+    .btn-base {
+        transition:
+            background-color 0.15s ease,
+            box-shadow 0.15s ease,
+            transform 0.1s ease,
+            border-color 0.15s ease;
+    }
+    .btn-base:hover:not(:disabled) {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-1px);
+    }
+    .btn-base:active:not(:disabled) {
+        transform: translateY(0);
+        box-shadow: var(--shadow-sm);
+    }
+
+    /* ------- Inputs (shared skin) ------- */
+    .field {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        color: var(--color-fg);
+        border-radius: 0.6rem;
+        padding: 0.6rem 0.8rem;
+        width: 100%;
+        outline: none;
+        transition:
+            border-color 0.15s,
+            box-shadow 0.15s;
+    }
+    .field::placeholder {
+        color: color-mix(in oklab, var(--color-muted) 85%, transparent);
+    }
+    .field:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-primary) 22%, transparent);
+    }
+    .field:hover:not(:disabled) {
+        border-color: color-mix(
+            in oklab,
+            var(--color-primary) 40%,
+            var(--color-border)
+        );
+    }
+    .field:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-primary) 22%, transparent);
+    }
+    .field[aria-invalid="true"] {
+        border-color: var(--color-error);
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-error) 22%, transparent);
+    }
+    .field:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    /* ------- Checkbox / Radio / Switch ------- */
+    .check {
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border: 1.5px solid var(--color-border);
+        border-radius: 5px;
+        background: var(--color-panel);
+        display: inline-grid;
+        place-content: center;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        flex: none;
+    }
+    .check:hover {
+        border-color: var(--color-primary);
+    }
+    .check:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-primary) 25%, transparent);
+    }
+    .check:checked {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+    }
+    .check:checked::after {
+        content: "";
+        width: 5px;
+        height: 9px;
+        margin-top: -2px;
+        border: solid var(--color-primary-fg);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+    .radio {
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1.5px solid var(--color-border);
+        background: var(--color-panel);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        flex: none;
+        display: inline-grid;
+        place-content: center;
+    }
+    .radio:hover {
+        border-color: var(--color-primary);
+    }
+    .radio:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-primary) 25%, transparent);
+    }
+    .radio:checked {
+        border-color: var(--color-primary);
+    }
+    .radio:checked::after {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--color-primary);
+    }
+
+    .switch {
+        appearance: none;
+        width: 42px;
+        height: 24px;
+        position: relative;
+        background: color-mix(in oklab, var(--color-muted) 35%, transparent);
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        flex: none;
+    }
+    .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--color-panel);
+        box-shadow: var(--shadow-sm);
+        transition: left 0.2s ease;
+    }
+    .switch:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px
+            color-mix(in oklab, var(--color-primary) 25%, transparent);
+    }
+    .switch:checked {
+        background: var(--color-primary);
+    }
+    .switch:checked::after {
+        left: 20px;
+    }
+
+    /* ------- Range slider ------- */
+    .range {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 6px;
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--color-muted) 30%, transparent);
+        outline: none;
+    }
+    .range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        border: 2px solid var(--color-panel);
+        box-shadow: var(--shadow-sm);
+        cursor: pointer;
+    }
+    .range::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        border: 2px solid var(--color-panel);
+        box-shadow: var(--shadow-sm);
+        cursor: pointer;
+    }
+
+    /* ------- Spinner ------- */
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+    .spinner {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid
+            color-mix(in oklab, var(--color-muted) 30%, transparent);
+        border-top-color: var(--color-primary);
+        animation: spin 0.7s linear infinite;
+        flex: none;
+    }
+
+    /* ------- Tooltip ------- */
+    [data-tip] {
+        position: relative;
+    }
+    [data-tip]:hover::after,
+    [data-tip]:focus-visible::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 6px);
+        transform: translateX(-50%);
+        background: var(--color-fg);
+        color: var(--color-std);
+        padding: 4px 8px;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 50;
+        border-radius: 6px;
+        box-shadow: var(--shadow-md);
+    }
+
+    /* ------- Skeleton shimmer ------- */
+    @keyframes shimmer {
+        0% {
+            background-position: -200% 0;
+        }
+        100% {
+            background-position: 200% 0;
+        }
+    }
+    .skeleton {
+        border-radius: var(--radius);
+        background: linear-gradient(
+            90deg,
+            color-mix(in oklab, var(--color-muted) 12%, transparent) 0%,
+            color-mix(in oklab, var(--color-muted) 22%, transparent) 50%,
+            color-mix(in oklab, var(--color-muted) 12%, transparent) 100%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.6s infinite linear;
+    }
+
+    /* ------- Progress bar ------- */
+    .bar {
+        height: 8px;
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--color-muted) 25%, transparent);
+        position: relative;
+        overflow: hidden;
+    }
+    .bar > span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--color-primary);
+        transition: width 0.4s ease;
+    }
+
+    /* ------- Status dot pulse (kept — it's a familiar pattern) ------- */
+    @keyframes ping {
+        0% {
+            transform: scale(1);
+            opacity: 0.6;
+        }
+        75%,
+        100% {
+            transform: scale(2.2);
+            opacity: 0;
+        }
+    }
+    .pulse-dot {
+        position: relative;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        flex: none;
+    }
+    .pulse-dot::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: inherit;
+        animation: ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+
+    /* ------- Marquee ------- */
+    @keyframes marquee {
+        0% {
+            transform: translateX(0);
+        }
+        100% {
+            transform: translateX(-50%);
+        }
+    }
+    .marquee-track {
+        display: inline-flex;
+        white-space: nowrap;
+        animation: marquee 30s linear infinite;
+    }
+    .marquee-track--reverse {
+        animation-direction: reverse;
+    }
+
+    /* ------- Toast slide ------- */
+    @keyframes toast-in {
+        from {
+            transform: translateY(-12px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+    .toast-in {
+        animation: toast-in 0.25s ease-out;
+    }
+
+    /* ------- Scrollbar ------- */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: color-mix(in oklab, var(--color-muted) 40%, transparent);
+        border-radius: 999px;
+        border: 2px solid var(--color-std);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: color-mix(in oklab, var(--color-muted) 60%, transparent);
+    }
+}

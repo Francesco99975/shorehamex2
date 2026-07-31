@@ -1,0 +1,294 @@
+package ui
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
+// ModalProps controls a dialog's behaviour. The caller owns the `open` state
+// via OpenExpr — the Modal itself does not create it.
+type ModalProps struct {
+	Title    string
+	Subtitle string
+	OpenExpr string
+	MaxW     string
+}
+
+// Modal renders a responsive dialog with backdrop blur + focus trap.
+//
+// Mobile-first: <sm it's a bottom sheet that slides up; >=sm it's a centered
+// card. The body is the only scrollable region so the sticky header stays
+// reachable. x-teleport="body" lifts it out of any transformed ancestor so
+// position:fixed always resolves against the viewport.
+templ Modal(p ModalProps) {
+	{{ subtitle := p.Subtitle }}
+	{{maxW := p.MaxW
+if maxW == "" {
+	maxW = "sm:max-w-md"
+}
+	}}
+	<template x-teleport="body">
+		<div
+			x-show={ p.OpenExpr }
+			x-cloak
+			x-init="window.htmx && window.htmx.process($el)"
+			class="fixed inset-0 z-50 flex flex-col justify-end items-stretch p-0 sm:items-center sm:justify-center sm:p-4"
+			@keydown.escape.window={ p.OpenExpr + " = false" }
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby={ p.OpenExpr + "-title" }
+		>
+			<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click={ p.OpenExpr + " = false" } aria-hidden="true"></div>
+			<div
+				x-show={ p.OpenExpr }
+				x-transition:enter="transition ease-out duration-200"
+				x-transition:enter-start="opacity-0 translate-y-full sm:translate-y-0 sm:scale-95"
+				x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+				x-transition:leave="transition ease-in duration-150"
+				x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+				x-transition:leave-end="opacity-0 translate-y-full sm:translate-y-0 sm:scale-95"
+				x-trap.inert.noscroll={ p.OpenExpr }
+				class={
+					"relative w-full flex flex-col max-h-dvh sm:max-h-[85vh] " +
+						"bg-panel border border-border shadow-lg overflow-hidden " +
+						"rounded-t-2xl sm:rounded-2xl " +
+						"pb-[env(safe-area-inset-bottom)] sm:pb-0 " +
+						"sm:w-full " + maxW,
+				}
+			>
+				<header class="flex items-start justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-border">
+					<div class="min-w-0 flex-1">
+						if subtitle != "" {
+							<div class="text-xs text-muted truncate">{ subtitle }</div>
+						}
+						<h3
+							id={ p.OpenExpr + "-title" }
+							class="text-base sm:text-lg font-semibold text-fg truncate mt-0.5"
+						>{ p.Title }</h3>
+					</div>
+					<button
+						type="button"
+						@click={ p.OpenExpr + " = false" }
+						class="flex-none w-8 h-8 flex items-center justify-center text-muted hover:text-fg hover:bg-muted/10 transition-colors rounded-lg"
+						aria-label="Close dialog"
+					>
+						<span aria-hidden="true">✕</span>
+					</button>
+				</header>
+				<div class="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+					{ children... }
+				</div>
+			</div>
+		</div>
+	</template>
+}
+
+// DrawerSide is "left" or "right".
+type DrawerSide string
+
+const (
+	DrawerLeft  DrawerSide = "left"
+	DrawerRight DrawerSide = "right"
+)
+
+// DrawerProps — slide-in side panel. `OpenExpr` is caller-owned Alpine state.
+type DrawerProps struct {
+	Title    string
+	OpenExpr string
+	Side     DrawerSide
+	Width    string
+}
+
+// Drawer is a side-sliding panel with backdrop.
+templ Drawer(p DrawerProps) {
+	{{
+		side := p.Side
+		if side == "" {
+			side = DrawerRight
+		}
+		enterStart := "translate-x-full"
+		placement := "ml-auto border-l"
+		if side == DrawerLeft {
+			enterStart = "-translate-x-full"
+			placement = "mr-auto border-r"
+		}
+	}}
+	<div x-show={ p.OpenExpr } x-cloak class="fixed inset-0 z-50" @keydown.escape.window={ p.OpenExpr + " = false" } role="dialog" aria-modal="true">
+		<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click={ p.OpenExpr + " = false" }></div>
+		<aside
+			x-show={ p.OpenExpr }
+			x-transition:enter="transition transform ease-out duration-200"
+			x-transition:enter-start={ enterStart }
+			x-transition:enter-end="translate-x-0"
+			x-transition:leave="transition transform ease-in duration-150"
+			x-transition:leave-start="translate-x-0"
+			x-transition:leave-end={ enterStart }
+			class={ "relative h-full bg-panel border-border p-5 max-w-[90vw] shadow-lg", placement, nonEmpty(p.Width, "w-80") }
+		>
+			<div class="flex items-center justify-between mb-4">
+				<div class="font-semibold text-fg">{ p.Title }</div>
+				<button type="button" @click={ p.OpenExpr + " = false" } class="text-muted hover:text-fg" aria-label="Close">✕</button>
+			</div>
+			{ children... }
+		</aside>
+	</div>
+}
+
+type NavDrawerProps struct {
+	Title    string
+	OpenExpr string
+}
+
+// Drawer is a side-sliding panel with backdrop.
+templ NavDrawer(p NavDrawerProps) {
+	<aside
+		class="fixed lg:static inset-y-0 left-0 z-40 w-64 bg-panel border-r border-border flex flex-col transition-transform"
+		:class={ p.OpenExpr + " ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'" }
+	>
+		<div class="h-16 flex items-center gap-2 px-5 border-b border-border">
+			@icons.Lense("test-primary w-5 h-5")
+			<span class="font-semibold tracking-tight">{ p.Title }</span>
+		</div>
+		{ children... }
+	</aside>
+	<!-- Backdrop for mobile -->
+	<div x-show={ p.OpenExpr } @click={ p.OpenExpr + " = false" } class="fixed inset-0 z-30 bg-black/40 lg:hidden"></div>
+}
+
+// MenuItem — single row in a @DropdownMenu.
+type MenuItem struct {
+	Label   string
+	OnClick string
+	Danger  bool
+	Divider bool
+}
+
+// DropdownMenu — floating action menu. Self-contained (`open` is scoped).
+templ DropdownMenu(label string, items ...MenuItem) {
+	<div class="relative" x-data="{ open: false }">
+		<button
+			type="button"
+			@click="open = !open"
+			@click.away="open = false"
+			:aria-expanded="open.toString()"
+			class="btn-base inline-flex items-center gap-1.5 border border-border bg-panel text-fg text-sm font-medium px-3 py-2 rounded-lg hover:bg-muted/10"
+		>
+			{ label } <span class="text-muted">▾</span>
+		</button>
+		<div
+			x-show="open"
+			x-cloak
+			x-transition.opacity
+			class="absolute z-20 mt-1 min-w-44 card shadow-lg py-1 text-sm"
+			role="menu"
+		>
+			for _, it := range items {
+				if it.Divider {
+					<div class="my-1 border-t border-border"></div>
+				} else if it.Danger {
+					<button type="button" @click={ it.OnClick + "; open = false" } class="w-full text-left px-3 py-2 text-error hover:bg-error/10" role="menuitem">
+						{ it.Label }
+					</button>
+				} else {
+					<button type="button" @click={ it.OnClick + "; open = false" } class="w-full text-left px-3 py-2 text-fg hover:bg-muted/10" role="menuitem">
+						{ it.Label }
+					</button>
+				}
+			}
+		</div>
+	</div>
+}
+
+// Tooltip wraps its children in a <span data-tip="…"> so the global CSS shows
+// the tip on hover/focus. Position is always below.
+templ Tooltip(text string) {
+	<span data-tip={ text } tabindex="0">
+		{ children... }
+	</span>
+}
+
+// AccordionItem — one Q/A pair.
+type AccordionItem struct {
+	Title string
+	Body  string
+}
+
+// Accordion is a vertical stack of collapsible rows. At most one open at a time.
+templ Accordion(items ...AccordionItem) {
+	<div x-data="{ o: 0 }" class="divide-y divide-border border border-border rounded-xl overflow-hidden">
+		for i, it := range items {
+			<div>
+				<button
+					type="button"
+					@click={ "o = (o === " + itoa(i) + " ? -1 : " + itoa(i) + ")" }
+					:aria-expanded={ "(o === " + itoa(i) + ").toString()" }
+					class="w-full flex items-center justify-between px-4 py-3.5 text-left text-sm font-medium text-fg hover:bg-muted/5"
+				>
+					<span>{ it.Title }</span>
+					<span class="text-muted text-lg leading-none" x-text={ "o === " + itoa(i) + " ? '−' : '+'" }></span>
+				</button>
+				<div x-show={ "o === " + itoa(i) } x-collapse class="px-4 pb-4 text-sm text-muted leading-relaxed">
+					{ it.Body }
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// Command — one @CommandPalette row.
+type Command struct {
+	Label string
+	Keys  string
+	Href  string
+}
+
+// CommandPalette is a ⌘K / Ctrl+K global launcher.
+templ CommandPalette(cmds ...Command) {
+	<div
+		x-data={ "{ open:false, q:'', cmds: " + commandsToJS(cmds) + ", get filtered(){ return this.cmds.filter(c => c.l.toLowerCase().includes(this.q.toLowerCase())); } }" }
+		@keydown.window.prevent.ctrl.k="open = true"
+		@keydown.window.prevent.meta.k="open = true"
+	>
+		<button
+			type="button"
+			@click="open = true"
+			class="field flex items-center gap-2 text-left"
+		>
+			<svg class="text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<circle cx="11" cy="11" r="7"></circle>
+				<line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+			</svg>
+			<span class="text-muted text-sm">Search or run a command…</span>
+			<span class="ml-auto text-xs text-muted border border-border rounded px-1.5 py-0.5">⌘K</span>
+		</button>
+		<div x-show="open" x-cloak class="fixed inset-0 z-50 grid items-start justify-center pt-24 px-4" @keydown.escape.window="open = false" role="dialog" aria-modal="true">
+			<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="open = false"></div>
+			<div
+				x-show="open"
+				x-transition:enter="transition ease-out duration-150"
+				x-transition:enter-start="opacity-0 -translate-y-2"
+				x-transition:enter-end="opacity-100 translate-y-0"
+				x-trap.inert.noscroll="open"
+				class="relative w-full max-w-lg bg-panel border border-border rounded-xl shadow-lg overflow-hidden"
+			>
+				<input
+					x-model="q"
+					x-ref="q"
+					x-init="$nextTick(() => $refs.q.focus())"
+					@keydown.escape="open = false"
+					class="w-full px-4 py-3 bg-transparent border-b border-border text-sm outline-none placeholder:text-muted"
+					placeholder="Type a command…"
+					autofocus
+				/>
+				<ul class="max-h-72 overflow-auto py-1" role="listbox">
+					<template x-for="c in filtered" :key="c.l">
+						<li>
+							<button type="button" class="w-full text-left px-4 py-2.5 text-sm flex justify-between items-center hover:bg-muted/10">
+								<span x-text="c.l" class="text-fg"></span>
+								<span class="text-xs text-muted" x-text="c.k"></span>
+							</button>
+						</li>
+					</template>
+					<li x-show="!filtered.length" class="px-4 py-6 text-center text-sm text-muted">No commands match</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+}

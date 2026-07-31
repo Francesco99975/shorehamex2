@@ -1,0 +1,18 @@
+package views
+
+import "github.com/Francesco99975/shorehamex2/internal/config"
+import "github.com/Francesco99975/shorehamex2/views/layouts"
+
+type DashboardProps struct {
+	Username string
+	Email    string
+	Fullname string
+}
+
+templ Dashboard(site config.Site, props DashboardProps) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
+			Dashboard
+		</main>
+	}
+}

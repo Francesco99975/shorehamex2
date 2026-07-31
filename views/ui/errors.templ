@@ -1,0 +1,51 @@
+package ui
+
+// ErrorHeader renders the top marquee for a full-screen error state, scrolling
+// left. `title` is the phrase tiled across the ticker (e.g. "SERVER ERROR").
+//
+// Unlike the cyberpunk original this variant does not embed HeaderCore — the
+// general error page is intentionally chrome-free (just the two marquees framing
+// the message). If you want the app header on the error page, wrap this call
+// site in your own header component.
+templ ErrorHeader(title string) {
+	@MarqueeDisplay(false, RepeatMarquee(title, DisplayError, 6)...)
+}
+
+// ErrorFooter renders the bottom marquee, scrolling right (reverse).
+templ ErrorFooter(title string) {
+	@MarqueeDisplay(true, RepeatMarquee(title, DisplayError, 6)...)
+}
+
+// ErrorContentProps configures the centered content block between the marquees.
+type ErrorContentProps struct {
+	Code     string // large status code, e.g. "500"
+	Title    string // human title, e.g. "Internal Server Error"
+	Detail   string // optional full error / stack text
+	HomeHref string // defaults to "/"
+	HomeText string // defaults to "Return Home"
+}
+
+// ErrorContent is the centered error message with an optional detail panel and
+// a return-home button. General skin: rounded card, soft mono detail panel.
+templ ErrorContent(p ErrorContentProps) {
+	{{ code := nonEmpty(p.Code, "500") }}
+	{{ title := nonEmpty(p.Title, "Something went wrong") }}
+	{{ home := nonEmpty(p.HomeHref, "/") }}
+	{{ homeText := nonEmpty(p.HomeText, "Return Home") }}
+	<main class="flex-1 flex flex-col items-center justify-center gap-6 px-4 py-12 text-center">
+		<div class="flex flex-col items-center gap-2">
+			<span class="text-error font-black leading-none text-[clamp(4rem,18vw,9rem)]">{ code }</span>
+			<h1 class="text-foreground font-bold text-[clamp(1.25rem,5vw,2rem)] text-balance">{ title }</h1>
+		</div>
+		if p.Detail != "" {
+			<pre class="max-w-2xl w-full overflow-x-auto rounded-xl border border-border bg-muted/20 p-4 text-left text-xs sm:text-sm text-muted font-mono whitespace-pre-wrap break-words">{ p.Detail }</pre>
+		}
+		<a
+			href={ templ.SafeURL(home) }
+			class="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+		>
+			<span aria-hidden="true">&larr;</span>
+			{ homeText }
+		</a>
+	</main>
+}

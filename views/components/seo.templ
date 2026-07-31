@@ -1,0 +1,56 @@
+package components
+
+import (
+	"fmt"
+	"github.com/Francesco99975/shorehamex2/cmd/boot"
+	"github.com/Francesco99975/shorehamex2/internal/config"
+)
+
+templ SEO(site config.Site) {
+	<head hx-swap="outerHTML">
+		<title>{ site.AppName } | { site.Title }</title>
+		<meta name="description" content={ site.Metatags.Description }/>
+		<!-- PWA Manifest -->
+		<link rel="manifest" href="/assets/dist/manifest.webmanifest"/>
+		<!-- Apple Touch Icon (for iOS reliability) -->
+		<link rel="apple-touch-icon" href="/assets/dist/apple-touch-icon-180x180.png"/>
+		<!-- Theme Color -->
+		<meta name="theme-color" content="#ffffff"/>
+		<link rel="icon" href="/assets/dist/icon-optimized.svg" type="image/svg+xml"/>
+		<link rel="icon" href="/assets/dist/favicon-32x32.png" type="image/png" sizes="32x32"/>
+		<link rel="icon" href="/assets/dist/favicon.ico" type="image/x-icon" sizes="64x64"/>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+		// <meta name="keywords" content={ site.Metatags.Keywords }/>
+		<meta name="author" content={ site.Metatags.Author }/>
+		<meta name="robots" content={ site.Metatags.Robots }/>
+		// <link rel="robots" href="/assets/dist/robots.txt"/>
+		<link rel="canonical" href={ site.Metatags.Canonical }/>
+		<meta property="og:locale" content="en_US"/>
+		<meta property="og:type" content="website"/>
+		<meta property="og:title" content={ site.Title }/>
+		<meta property="og:description" content={ site.Metatags.Description }/>
+		<meta property="og:url" content={ boot.Environment.URL }/>
+		<meta property="og:site_name" content={ site.AppName }/>
+		// <meta property="article:modified_time" content=""/>
+		<meta property="og:image" content="/assets/dist/pwa-512x512.png"/>
+		<meta property="og:image:alt" content="Site Image"/>
+		<meta property="og:image:width" content="512"/>
+		<meta property="og:image:height" content="512"/>
+		<meta property="og:image:type" content="image/png"/>
+		<meta name="twitter:title" content={ site.Title }/>
+		<meta name="twitter:description" content={ site.Metatags.Description }/>
+		<meta name="twitter:image" content="/assets/dist/pwa-512x512.png"/>
+		<meta name="twitter:card" content="summary_large_image"/>
+		<link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml"/>
+		<script type="application/ld+json" nonce={ site.Nonce }>
+			{{ site.Organization }}
+        </script>
+		@DeferredScript(fmt.Sprintf("/assets/dist/%s", site.JSFile), site.Nonce, site.JSIntegrity)
+		@Stylesheet(fmt.Sprintf("/assets/dist/%s", site.CSSFile), site.CSSIntegrity)
+		for _, style := range site.Styles {
+			@Stylesheet(style.CSSFile, "")
+		}
+	</head>
+}

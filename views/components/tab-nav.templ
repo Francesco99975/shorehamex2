@@ -1,0 +1,74 @@
+package components
+
+import (
+	"fmt"
+	"strings"
+)
+
+type TabConfig struct {
+	ID       string
+	Label    string
+	Icon     templ.Component
+	HasBadge bool
+	Route    string
+}
+
+func generateTabIndicatorStyle(tabs []TabConfig) string {
+	count := len(tabs)
+	if count == 0 {
+		return ""
+	}
+
+	widthPercent := 100 / count
+
+	// Build the ternary chain for translateX
+	// e.g., "activeTab === 'profile' ? '0%' : activeTab === 'security' ? '100%' : ..."
+	var conditions []string
+	for i, tab := range tabs {
+		translateX := i * 100
+		conditions = append(conditions, fmt.Sprintf("activeTab === '%s' ? '%d%%'", tab.ID, translateX))
+	}
+
+	translateExpr := strings.Join(conditions, " : ") + " : '0%'"
+
+	return fmt.Sprintf("'transform: translateX(' + (%s) + '); width: %d%%'", translateExpr, widthPercent)
+}
+
+templ TabNav(tabs []TabConfig, activeTab string) {
+	<!-- Mobile Bottom Tab Navigation -->
+	<nav class="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-std border-t border-primary/10 backdrop-blur-xl safe-bottom">
+		<div class="flex h-16">
+			for _, tab := range tabs {
+				@TabItem(TabItemProps{
+					ID:       tab.ID,
+					Label:    tab.Label,
+					Icon:     tab.Icon,
+					IsActive: tab.ID == activeTab,
+					HasBadge: tab.HasBadge,
+					Href:     tab.Route,
+				})
+			}
+		</div>
+		<div
+			class="absolute bottom-0 left-0 h-1 bg-linear-to-r from-primary to-accent transition-transform duration-300 ease-in-out"
+			:style={ generateTabIndicatorStyle(tabs) }
+		></div>
+	</nav>
+	<!-- Desktop Horizontal Tab Navigation -->
+	<nav class="hidden md:block fixed bottom-0 left-0 right-0 z-50 bg-std border-t border-primary/10 backdrop-blur-xl">
+		<div class="max-w-7xl mx-auto px-4">
+			<div class="flex items-center gap-2 h-16">
+				for _, tab := range tabs {
+					@TabItemDesktop(TabItemProps{
+						ID:       tab.ID,
+						Label:    tab.Label,
+						Icon:     tab.Icon,
+						IsActive: tab.ID == activeTab,
+						HasBadge: tab.HasBadge,
+						Href:     tab.Route,
+					})
+				}
+			</div>
+		</div>
+	</nav>
+}

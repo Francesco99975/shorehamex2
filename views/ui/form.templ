@@ -1,0 +1,27 @@
+package ui
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
+// WithLoading returns the HTMX attributes that tie a submit action to a
+// FormLoading overlay: it points hx-indicator at the overlay and disables all
+// interactive descendants while the request is in flight. Identical behaviour
+// to the cyberpunk original — only the visual skin of FormLoading differs.
+func WithLoading(indicatorID string) templ.Attributes {
+	return templ.Attributes{
+		"hx-indicator":    "#" + indicatorID,
+		"hx-disabled-elt": "find input, find select, find textarea, find checkbox, find radio, find button",
+	}
+}
+
+// FormLoading is an absolutely-positioned overlay shown while an HTMX request
+// runs. The general skin uses a soft frosted panel with a rounded spinner
+// instead of the cyberpunk scanline treatment.
+templ FormLoading(indicatorID string, label string) {
+	<div
+		id={ indicatorID }
+		class="htmx-indicator absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-surface/90 backdrop-blur-sm rounded-xl pointer-events-none"
+	>
+		@icons.Loading("w-9 h-9 animate-spin text-primary")
+		<p class="text-sm text-muted font-medium">{ label }</p>
+	</div>
+}

@@ -1,0 +1,17 @@
+build
+assets
+.vscode
+*compose*
+Dockerfile
+report.txt
+*.log
+age-key.*
+coverage.*
+*.tar
+dbp.*
+*.gz
+*.enc
+.github
+reports
+static
+*templ.go

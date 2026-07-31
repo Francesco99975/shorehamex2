@@ -1,0 +1,508 @@
+package ui
+
+// CheckboxProps — single boolean field rendered as a rounded checkbox.
+type CheckboxProps struct {
+	Name     string
+	Value    string
+	Label    string
+	Checked  bool
+	Disabled bool
+	Attrs    templ.Attributes
+}
+
+// Checkbox — labelled boolean. Clicking the label toggles via native binding.
+templ Checkbox(p CheckboxProps) {
+	<label class="flex items-center gap-2.5 cursor-pointer py-1">
+		<input
+			type="checkbox"
+			class="check"
+			name={ p.Name }
+			value={ nonEmpty(p.Value, "on") }
+			checked?={ p.Checked }
+			disabled?={ p.Disabled }
+			{ p.Attrs... }
+		/>
+		if p.Label != "" {
+			<span class="text-sm text-fg">{ p.Label }</span>
+		}
+		{ children... }
+	</label>
+}
+
+// RadioOption is one choice inside a @RadioGroup.
+type RadioOption struct {
+	Value string
+	Label string
+}
+
+// RadioGroup renders a labelled vertical radio list.
+templ RadioGroup(name, initial, label string, opts ...RadioOption) {
+	<fieldset>
+		if label != "" {
+			<legend class="text-sm font-medium text-fg mb-2">{ label }</legend>
+		}
+		<div class="flex flex-col gap-1.5">
+			for _, o := range opts {
+				<label class="flex items-center gap-2.5 cursor-pointer py-0.5">
+					<input
+						type="radio"
+						name={ name }
+						value={ o.Value }
+						checked?={ o.Value == initial }
+						class="radio"
+					/>
+					<span class="text-sm text-fg">{ o.Label }</span>
+				</label>
+			}
+		</div>
+	</fieldset>
+}
+
+// SwitchProps — on/off toggle styled as a rounded slider.
+type SwitchProps struct {
+	Name     string
+	Label    string
+	Checked  bool
+	Disabled bool
+	PostURL  string
+	Attrs    templ.Attributes
+}
+
+// Switch — labelled on/off control. Pair with PostURL for one-liner toggles.
+templ Switch(p SwitchProps) {
+	<label class="flex items-center justify-between py-1 gap-3">
+		if p.Label != "" {
+			<span class="text-sm text-fg">{ p.Label }</span>
+		}
+		if p.PostURL != "" {
+			<input
+				type="checkbox"
+				class="switch"
+				name={ p.Name }
+				checked?={ p.Checked }
+				disabled?={ p.Disabled }
+				hx-post={ p.PostURL }
+				hx-swap="none"
+				{ p.Attrs... }
+			/>
+		} else {
+			<input
+				type="checkbox"
+				class="switch"
+				name={ p.Name }
+				checked?={ p.Checked }
+				disabled?={ p.Disabled }
+				{ p.Attrs... }
+			/>
+		}
+	</label>
+}
+
+// DropOption is one entry in @Droplist / @Combobox / @FilterSelect.
+type DropOption struct {
+	Value string
+	Label string
+}
+
+// DroplistProps — single-select custom dropdown built on the W3C ARIA 1.2
+// combobox + listbox pattern.
+type DroplistProps struct {
+	Name        string
+	Label       string
+	Selected    string
+	Required    bool
+	Placeholder string
+	Opts        []DropOption
+	Attrs       templ.Attributes
+}
+
+// Droplist is a fully-custom, accessible single-select dropdown. A hidden
+// form-bearing input carries the value so it submits like a native <select>.
+templ Droplist(p DroplistProps) {
+	{{placeholder := p.Placeholder
+if placeholder == "" {
+	placeholder = "Select…"
+}
+	}}
+	{{listID := p.Name + "-listbox"
+btnID := p.Name + "-trigger"
+	}}
+	<div
+		x-data={ "{ open:false, sel: '" + p.Selected + "', active: -1, " +
+				"opts: " + dropOptsToJS(p.Opts) + ", " +
+				"labelOf(v){ const o = this.opts.find(x => x.v === v); return o ? o.l : ''; }, " +
+				"toggle(){ this.open = !this.open; if(this.open){ this.active = Math.max(0, this.opts.findIndex(o => o.v === this.sel)); this.$nextTick(()=>this.scrollActive()); } }, " +
+				"pick(i){ if(i<0||i>=this.opts.length) return; this.sel = this.opts[i].v; this.open = false; this.$refs.trigger.focus(); }, " +
+				"move(d){ if(!this.open){ this.open = true; this.active = Math.max(0, this.active); } " +
+				"else { this.active = (this.active + d + this.opts.length) % this.opts.length; } this.$nextTick(()=>this.scrollActive()); }, " +
+				"jump(i){ this.open = true; this.active = i; this.$nextTick(()=>this.scrollActive()); }, " +
+				"typeahead(k){ if(!/^[a-z0-9]$/i.test(k)) return; const start = (this.active + 1) % this.opts.length; " +
+				"for(let n=0; n<this.opts.length; n++){ const i = (start + n) % this.opts.length; " +
+				"if(this.opts[i].l.toLowerCase().startsWith(k.toLowerCase())){ this.jump(i); return; } } }, " +
+				"scrollActive(){ const el = this.$refs['opt-'+this.active]; if(el && el.scrollIntoView) el.scrollIntoView({block:'nearest'}); } }" }
+		@keydown.escape.window="if(open){ open = false; $refs.trigger.focus(); }"
+		@click.away="open = false"
+		class="relative h-fit self-start"
+	>
+		if p.Label != "" {
+			<label for={ btnID } class="block text-sm font-medium text-fg mb-1.5">{ p.Label }</label>
+		}
+		<button
+			id={ btnID }
+			x-ref="trigger"
+			type="button"
+			role="combobox"
+			aria-haspopup="listbox"
+			aria-controls={ listID }
+			:aria-expanded="open.toString()"
+			:aria-activedescendant={ "open && active >= 0 ? '" + listID + "-opt-' + active : null" }
+			@click="toggle()"
+			@keydown.arrow-down.prevent="move(1)"
+			@keydown.arrow-up.prevent="move(-1)"
+			@keydown.home.prevent="jump(0)"
+			@keydown.end.prevent="jump(opts.length - 1)"
+			@keydown.enter.prevent="open ? pick(active) : toggle()"
+			@keydown.space.prevent="open ? pick(active) : toggle()"
+			@keydown="if(open && $event.key.length === 1) typeahead($event.key)"
+			class="field flex items-center justify-between w-full text-left"
+		>
+			<span x-text="labelOf(sel) || '{ placeholder }'" :class="!sel && 'text-muted'"></span>
+			<span class="text-muted transition-transform" :class="open && 'rotate-180'">▾</span>
+		</button>
+		<input
+			type="hidden"
+			name={ p.Name }
+			:value="sel"
+			required?={ p.Required }
+			{ p.Attrs... }
+		/>
+		<ul
+			id={ listID }
+			role="listbox"
+			tabindex="-1"
+			aria-labelledby={ btnID }
+			x-show="open"
+			x-cloak
+			x-transition.opacity.duration.150ms
+			class="absolute z-10 top-full left-0 right-0 mt-1 card shadow-lg max-h-52 overflow-auto py-1"
+		>
+			for i, o := range p.Opts {
+				{{idx := i
+optID := listID + "-opt-" + itoa(i)
+				}}
+				<li
+					id={ optID }
+					x-ref={ "opt-" + itoa(idx) }
+					role="option"
+					:aria-selected={ "sel === '" + o.Value + "'" }
+					@click={ "pick(" + itoa(idx) + ")" }
+					@mouseenter={ "active = " + itoa(idx) }
+					:class={
+						"sel === '" + o.Value + "' " +
+							"? 'bg-primary text-primary-fg' " +
+							": (active === " + itoa(idx) + " ? 'bg-primary/10 text-fg' : 'text-fg hover:bg-muted/10')",
+					}
+					class="cursor-pointer px-3 py-2 text-sm"
+				>
+					{ o.Label }
+				</li>
+			}
+		</ul>
+	</div>
+}
+
+// FilterSelectProps — HTMX-driven single-select filter for "filter a list"
+// use cases. Fires a request on every selection change and shows a Clear chip.
+type FilterSelectProps struct {
+	Name        string
+	Label       string
+	Selected    string
+	Placeholder string
+	Icon        string
+	Opts        []DropOption
+	URL         string
+	Target      string
+	Swap        string
+	Include     string
+	Trigger     string
+	PushURL     bool
+	Attrs       templ.Attributes
+}
+
+// FilterSelect re-queries an endpoint via HTMX whenever the selection changes.
+templ FilterSelect(p FilterSelectProps) {
+	{{placeholder := p.Placeholder
+if placeholder == "" {
+	placeholder = "All"
+}
+	}}
+	{{swap := p.Swap
+if swap == "" {
+	swap = "innerHTML"
+}
+	}}
+	{{trigger := p.Trigger
+if trigger == "" {
+	trigger = "change"
+}
+	}}
+	{{listID := p.Name + "-listbox"
+btnID := p.Name + "-trigger"
+inputID := p.Name + "-input"
+	}}
+	<div
+		x-data={ "{ open:false, sel: '" + p.Selected + "', active: -1, " +
+				"opts: " + dropOptsToJS(p.Opts) + ", " +
+				"labelOf(v){ const o = this.opts.find(x => x.v === v); return o ? o.l : ''; }, " +
+				"toggle(){ this.open = !this.open; if(this.open){ this.active = Math.max(0, this.opts.findIndex(o => o.v === this.sel)); this.$nextTick(()=>this.scrollActive()); } }, " +
+				"pick(i){ if(i<0||i>=this.opts.length) return; this.setVal(this.opts[i].v); this.open = false; this.$refs.trigger.focus(); }, " +
+				"clear(){ this.setVal(''); this.$refs.trigger.focus(); }, " +
+				"setVal(v){ if(this.sel === v) return; this.sel = v; this.$nextTick(() => this.$refs.input.dispatchEvent(new Event('change', {bubbles:true}))); }, " +
+				"move(d){ if(!this.open){ this.open = true; this.active = Math.max(0, this.active); } " +
+				"else { this.active = (this.active + d + this.opts.length) % this.opts.length; } this.$nextTick(()=>this.scrollActive()); }, " +
+				"jump(i){ this.open = true; this.active = i; this.$nextTick(()=>this.scrollActive()); }, " +
+				"typeahead(k){ if(!/^[a-z0-9]$/i.test(k)) return; const start = (this.active + 1) % this.opts.length; " +
+				"for(let n=0; n<this.opts.length; n++){ const i = (start + n) % this.opts.length; " +
+				"if(this.opts[i].l.toLowerCase().startsWith(k.toLowerCase())){ this.jump(i); return; } } }, " +
+				"scrollActive(){ const el = this.$refs['opt-'+this.active]; if(el && el.scrollIntoView) el.scrollIntoView({block:'nearest'}); } }" }
+		@keydown.escape.window="if(open){ open = false; $refs.trigger.focus(); }"
+		@click.away="open = false"
+		class="relative h-fit self-start inline-flex items-stretch gap-2 flex-wrap"
+	>
+		<div class="relative h-fit self-start">
+			if p.Label != "" {
+				<label for={ btnID } class="block text-sm font-medium text-fg mb-1.5">{ p.Label }</label>
+			}
+			<button
+				id={ btnID }
+				x-ref="trigger"
+				type="button"
+				role="combobox"
+				aria-haspopup="listbox"
+				aria-controls={ listID }
+				:aria-expanded="open.toString()"
+				:aria-activedescendant={ "open && active >= 0 ? '" + listID + "-opt-' + active : null" }
+				@click="toggle()"
+				@keydown.arrow-down.prevent="move(1)"
+				@keydown.arrow-up.prevent="move(-1)"
+				@keydown.home.prevent="jump(0)"
+				@keydown.end.prevent="jump(opts.length - 1)"
+				@keydown.enter.prevent="open ? pick(active) : toggle()"
+				@keydown.space.prevent="open ? pick(active) : toggle()"
+				@keydown="if(open && $event.key.length === 1) typeahead($event.key)"
+				:class="sel ? 'border-primary ring-2 ring-primary/20' : ''"
+				class="field flex items-center gap-2 w-full text-left transition-colors"
+			>
+				if p.Icon != "" {
+					<span class="text-muted flex-none" aria-hidden="true">{ p.Icon }</span>
+				}
+				<span class="flex-1 truncate" x-text={ "labelOf(sel) || '" + placeholder + "'" } :class="!sel && 'text-muted'"></span>
+				<span class="htmx-indicator spinner flex-none" style="width:14px;height:14px;border-width:1.5px"></span>
+				<span class="text-muted transition-transform flex-none" :class="open && 'rotate-180'">▾</span>
+			</button>
+		</div>
+		<input
+			id={ inputID }
+			x-ref="input"
+			type="hidden"
+			name={ p.Name }
+			:value="sel"
+			hx-get={ p.URL }
+			hx-trigger={ trigger }
+			hx-target={ "#" + p.Target }
+			hx-swap={ swap }
+			if p.PushURL {
+				hx-push-url="true"
+			}
+			if p.Include != "" {
+				hx-include={ p.Include }
+			}
+			hx-indicator={ "#" + btnID + " .htmx-indicator" }
+			{ p.Attrs... }
+		/>
+		<button
+			type="button"
+			x-show="sel"
+			x-cloak
+			x-transition.opacity.duration.100ms
+			@click="clear()"
+			class="field inline-flex items-center gap-1 px-2.5 w-auto text-xs font-medium border-error/40 text-error hover:bg-error/10"
+			aria-label="Clear filter"
+		>
+			<span aria-hidden="true">×</span>
+			<span>Clear</span>
+		</button>
+		<ul
+			id={ listID }
+			role="listbox"
+			tabindex="-1"
+			aria-labelledby={ btnID }
+			x-show="open"
+			x-cloak
+			x-transition.opacity.duration.150ms
+			class="absolute z-10 top-full left-0 mt-1 min-w-full card shadow-lg max-h-52 overflow-auto py-1"
+		>
+			<li
+				role="option"
+				:aria-selected="sel === ''"
+				@click="pick(-1); setVal('')"
+				:class="!sel ? 'bg-primary text-primary-fg' : 'hover:bg-muted/10 text-muted'"
+				class="cursor-pointer px-3 py-2 text-sm italic"
+			>{ placeholder }</li>
+			for i, o := range p.Opts {
+				{{idx := i
+optID := listID + "-opt-" + itoa(i)
+				}}
+				<li
+					id={ optID }
+					x-ref={ "opt-" + itoa(idx) }
+					role="option"
+					:aria-selected={ "sel === '" + o.Value + "'" }
+					@click={ "pick(" + itoa(idx) + ")" }
+					@mouseenter={ "active = " + itoa(idx) }
+					:class={
+						"sel === '" + o.Value + "' " +
+							"? 'bg-primary text-primary-fg' " +
+							": (active === " + itoa(idx) + " ? 'bg-primary/10 text-fg' : 'text-fg hover:bg-muted/10')",
+					}
+					class="cursor-pointer px-3 py-2 text-sm"
+				>{ o.Label }</li>
+			}
+		</ul>
+	</div>
+}
+
+// ComboboxProps — searchable multi-select.
+type ComboboxProps struct {
+	Name        string
+	Label       string
+	Placeholder string
+	All         []string
+	Initial     []string
+}
+
+// Combobox is a searchable multi-select. Posts the selection as a CSV hidden input.
+templ Combobox(p ComboboxProps) {
+	<div
+		x-data={ "{ all: " + jsStringArray(p.All) + ", sel: " + jsStringArray(p.Initial) + ", " +
+				"q:'', open:false, " +
+				"get filtered(){ return this.all.filter(x => x.toLowerCase().includes(this.q.toLowerCase())); }, " +
+				"toggle(x){ this.sel.includes(x) ? this.sel = this.sel.filter(y => y !== x) : this.sel.push(x); } }" }
+	>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="relative h-fit self-start">
+			<div
+				class="field flex flex-wrap gap-1.5 items-center min-h-[44px]"
+				@click="open = true; $refs.q.focus()"
+			>
+				<template x-for="t in sel" :key="t">
+					<span class="rounded-full bg-primary/10 text-primary text-xs font-medium px-2.5 py-1 flex items-center gap-1.5">
+						<span x-text="t"></span>
+						<button type="button" @click.stop="toggle(t)" class="hover:text-error" aria-label="Remove">✕</button>
+					</span>
+				</template>
+				<input
+					x-ref="q"
+					x-model="q"
+					@focus="open = true"
+					@click.away="open = false"
+					placeholder={ nonEmpty(p.Placeholder, "Search…") }
+					class="bg-transparent outline-none text-sm flex-1 min-w-[140px]"
+				/>
+			</div>
+			<input type="hidden" name={ p.Name } :value="sel.join(',')"/>
+			<div
+				x-show="open"
+				x-cloak
+				x-transition.opacity
+				class="absolute z-10 top-full left-0 right-0 mt-1 card shadow-lg max-h-52 overflow-auto"
+				role="listbox"
+			>
+				<template x-for="o in filtered" :key="o">
+					<button
+						type="button"
+						@click="toggle(o)"
+						class="w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-muted/10"
+					>
+						<span x-text="o"></span>
+						<span x-show="sel.includes(o)" class="text-primary">✓</span>
+					</button>
+				</template>
+				<div x-show="!filtered.length" class="px-3 py-2 text-sm text-muted">No matches</div>
+			</div>
+		</div>
+	</div>
+}
+
+// FilterChipsProps — toggle-able tag chips. Selection is live in Alpine.
+type FilterChipsProps struct {
+	Name    string
+	Label   string
+	Options []string
+	Initial []string
+}
+
+// FilterChips is a multi-select chip row. Submits as CSV.
+templ FilterChips(p FilterChipsProps) {
+	<div
+		x-data={ "{ f: " + jsStringArray(p.Initial) + " }" }
+	>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="flex flex-wrap gap-2">
+			for _, t := range p.Options {
+				<button
+					type="button"
+					@click={ "f.includes('" + t + "') ? f = f.filter(x => x !== '" + t + "') : f.push('" + t + "')" }
+					:class={ "f.includes('" + t + "') ? 'bg-primary text-primary-fg border-primary' : 'border-border text-fg hover:border-primary hover:text-primary'" }
+					class="rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors"
+				>
+					{ t }
+				</button>
+			}
+		</div>
+		<input type="hidden" name={ p.Name } :value="f.join(',')"/>
+	</div>
+}
+
+// RangeProps — themed slider with live numeric readout.
+type RangeProps struct {
+	Name  string
+	Label string
+	Min   int
+	Max   int
+	Step  int
+	Value int
+	Unit  string
+}
+
+// Range is a slider with a live-updating value chip.
+templ Range(p RangeProps) {
+	{{step := p.Step
+if step == 0 {
+	step = 1
+}
+	}}
+	<div x-data={ "{ v: " + itoa(p.Value) + " }" }>
+		if p.Label != "" {
+			<div class="text-sm font-medium text-fg mb-1.5 flex justify-between items-center">
+				<span>{ p.Label }</span>
+				<span class="text-primary font-semibold">
+					<span x-text="v"></span>{ p.Unit }
+				</span>
+			</div>
+		}
+		<input
+			type="range"
+			name={ p.Name }
+			min={ itoa(p.Min) }
+			max={ itoa(p.Max) }
+			step={ itoa(step) }
+			x-model.number="v"
+			class="range"
+		/>
+	</div>
+}

@@ -1,0 +1,108 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ UserDetails(site config.Site, details components.UserInfo) {
+	@layouts.AdminLayout(site) {
+		<main class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 flex flex-col gap-6">
+			@ui.Breadcrumbs(
+				ui.Crumb{Label: "users", Href: "/settings/users"},
+				ui.Crumb{Label: details.Username},
+			)
+			<!--
+                HEADER CARD
+                Identity-first layout. Avatar + states (active dot + 2FA shield) on the
+                left, name/email/badges in the middle, action buttons docked top-right
+                on desktop and stacked full-width below identity on mobile.
+            -->
+			<header class="cp-card p-4 sm:p-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
+				<!-- AVATAR + state indicators -->
+				<div class="relative flex-none mx-auto sm:mx-0">
+					<div class={ "h-20 w-20 sm:h-24 sm:w-24 rounded-full flex items-center justify-center", details.Gradient }>
+						<span class="font-bold text-2xl text-accent uppercase">{ details.Initials }</span>
+					</div>
+					<span
+						class={
+							"absolute bottom-1 right-1 h-4 w-4 rounded-full ring-2 ring-panel",
+							templ.KV("bg-success", details.Status == "Active"),
+							templ.KV("bg-muted", details.Status != "Active"),
+						}
+						title={ "Status: " + details.Status }
+						aria-label={ "Status: " + details.Status }
+					></span>
+					if details.TwoFA {
+						<span
+							class="absolute top-0 right-0 h-6 w-6 rounded-full bg-panel ring-2 ring-panel flex items-center justify-center text-success"
+							title="Two-factor authentication enabled"
+							aria-label="Two-factor authentication enabled"
+						>
+							@icons.Shield("w-3.5 h-3.5")
+						</span>
+					}
+				</div>
+				<!-- NAME + EMAIL + classification badges -->
+				<div class="min-w-0 flex-1 text-center sm:text-left">
+					<div class="font-mono text-[10px] text-accent uppercase tracking-widest">user profile</div>
+					<h1
+						class="glitch neon-primary text-xl sm:text-2xl font-bold tracking-widest truncate"
+						data-text={ details.Username }
+					>{ details.Username }</h1>
+					<p class="mt-1 text-sm text-primary/70 break-all sm:break-normal sm:truncate">{ details.Email }</p>
+					<div class="mt-3 flex flex-wrap justify-center sm:justify-start items-center gap-2">
+						@ui.Badge(ui.BadgePrimary, false) {
+							{ details.Role }
+						}
+						if !details.Verified {
+							@ui.Badge(ui.BadgeError, true) {
+								UNVERIFIED
+							}
+						}
+					</div>
+				</div>
+			</header>
+			<!--
+                INFO GRID — single column on mobile, two columns on >=sm.
+                Each cell is a small-label + value stack so the data reads top-to-bottom.
+                Verified / 2FA labels inlined as ternaries below to keep this in one place.
+            -->
+			<section
+				aria-labelledby="info-heading"
+				class="cp-card p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4"
+			>
+				<h2 id="info-heading" class="sr-only">Account information</h2>
+				@detailRow("USER ID", details.ID, "font-mono text-xs break-all")
+				@detailRow("ROLE", details.Role, "")
+				@detailRow("STATUS", details.Status, "")
+				@detailRow("EMAIL", details.Email, "break-all")
+				if details.Verified {
+					@detailRow("EMAIL VERIFIED", "Verified", "")
+				} else {
+					@detailRow("EMAIL VERIFIED", "Not verified", "text-error")
+				}
+				if details.TwoFA {
+					@detailRow("TWO-FACTOR", "Enabled", "")
+				} else {
+					@detailRow("TWO-FACTOR", "Disabled", "text-muted")
+				}
+				@detailRow("LAST LOGIN", details.LastLogin, "")
+			</section>
+			@components.ActiveSessionsCard(details.Sessions, site.CSRF)
+		</main>
+	}
+}
+
+// detailRow renders one [LABEL → VALUE] pair. Co-located with the page because
+// its visual shape is tied to this grid; promote to components/ if a second
+// page needs it.
+templ detailRow(label, value, valueClass string) {
+	<div class="flex flex-col gap-0.5 min-w-0">
+		<span class="font-mono text-[10px] text-accent/70 uppercase tracking-widest">{ label }</span>
+		<span class={ "text-sm text-primary", valueClass }>{ value }</span>
+	</div>
+}

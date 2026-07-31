@@ -1,0 +1,91 @@
+package layouts
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+)
+
+type TabLayoutProps struct {
+	Site      config.Site
+	Tabs      []components.TabConfig
+	ActiveTab string
+}
+
+templ TabLayout(props TabLayoutProps) {
+	@CoreHTML(props.Site) {
+		<div
+			class="antialiased min-h-screen bg-std transition-colors"
+			x-data={ "{ activeTab: '" + props.ActiveTab + "' }" }
+		>
+			<!-- Main Content Area with padding for bottom navigation -->
+			<main class="pb-20 md:pb-20 min-h-screen" id="main-content">
+				{ children... }
+			</main>
+			<!-- Tab Navigation -->
+			@components.TabNav(props.Tabs, props.ActiveTab)
+		</div>
+	}
+}
+
+// Example usage helper function to generate default tabs
+
+func Tabs(role string) []components.TabConfig {
+	if role == "DEVELOPER" || role == "ADMIN" {
+		return []components.TabConfig{
+			{
+				ID:       "profile",
+				Label:    "Profile",
+				Icon:     icons.Home("w-full h-full"),
+				HasBadge: false,
+				Route:    "/settings/profile",
+			},
+			{
+				ID:       "security",
+				Label:    "Security",
+				Icon:     icons.Lock("w-full h-full"),
+				HasBadge: false,
+				Route:    "/settings/security",
+			},
+			{
+				ID:       "account",
+				Label:    "Account",
+				Icon:     icons.Info("w-full h-full"),
+				HasBadge: false,
+				Route:    "/settings/account",
+			},
+			{
+				ID:       "users",
+				Label:    "Users",
+				Icon:     icons.UsersIcon("w-full h-full"),
+				HasBadge: false,
+				Route:    "/settings/users",
+			},
+		}
+	}
+
+	return []components.TabConfig{
+		{
+			ID:       "profile",
+			Label:    "Profile",
+			Icon:     icons.UsersIcon("w-full h-full"),
+			HasBadge: false,
+			Route:    "/settings/profile",
+		},
+		{
+			ID:       "security",
+			Label:    "Security",
+			Icon:     icons.Lock("w-full h-full"),
+			HasBadge: false,
+			Route:    "/settings/security",
+		},
+		{
+			ID:       "account",
+			Label:    "Account",
+			Icon:     icons.UsersIcon("w-full h-full"),
+			HasBadge: false,
+			Route:    "/settings/account",
+		},
+	}
+
+}

@@ -1,0 +1,133 @@
+package ui
+
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
+// ThemeToggle flips the inherited `darkMode` reactive property. HeaderCore
+// owns the $watch that persists to localStorage and toggles html.dark.
+//
+// REQUIRED PARENT SCOPE: an ancestor x-data must expose `darkMode` (bool).
+// If you use @HeaderCore (directly or via @Header) this is already true.
+templ ThemeToggle() {
+	<button
+		@click="darkMode = !darkMode"
+		class="p-2.5 rounded-full bg-accent/10 hover:bg-accent/20 transition-all duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2 focus:ring-offset-primary"
+		aria-label="Toggle dark mode"
+		:aria-pressed="darkMode.toString()"
+	>
+		@icons.Sun("stroke-primary w-5 h-5")
+		@icons.Moon("stroke-primary w-5 h-5")
+	</button>
+}
+
+type DisplayStyle string
+
+const (
+	DisplayPrimary DisplayStyle = "primary"
+	DisplayAccent  DisplayStyle = "accent"
+	DisplayError   DisplayStyle = "error"
+	DisplayWarning DisplayStyle = "warning"
+	DisplaySuccess DisplayStyle = "success"
+	DisplayInfo    DisplayStyle = "info"
+	DisplayMuted   DisplayStyle = "muted"
+)
+
+// MarqueeItem is one ticker entry. Kind picks the text color.
+type MarqueeItem struct {
+	Text string
+	Kind DisplayStyle
+}
+
+func marqueeClass(kind string) string {
+	switch kind {
+	case "primary":
+		return "text-primary"
+	case "accent":
+		return "text-accent"
+	case "error":
+		return "text-error"
+	case "warning":
+		return "text-warning"
+	case "success":
+		return "text-success"
+	case "info":
+		return "text-info"
+	case "muted":
+		return "text-muted"
+	}
+	return "text-foreground"
+}
+
+// defaultMarqueeItems returns a neutral default ticker line. The general skin
+// drops the "//" cyber prefixes for plain sentence-case status text.
+func defaultMarqueeItems() []MarqueeItem {
+	return []MarqueeItem{
+		{"System online", "success"},
+		{"Network status: stable", "muted"},
+		{"0 critical warnings", "foreground"},
+		{"Press ? for the command palette", "muted"},
+		{"Mobile-first, accessible, themable", "foreground"},
+	}
+}
+
+// RepeatMarquee builds n identical items — handy for single-message tickers
+// like banners where one phrase should tile across the whole line.
+func RepeatMarquee(text string, kind DisplayStyle, n int) []MarqueeItem {
+	items := make([]MarqueeItem, n)
+	for i := range items {
+		items[i] = MarqueeItem{Text: text, Kind: kind}
+	}
+	return items
+}
+
+// Marquee renders an infinitely scrolling ticker moving left (the default).
+// Pass no items for the default set.
+templ Marquee(items ...MarqueeItem) {
+	@MarqueeDir(false, items...)
+}
+
+// MarqueeReverse renders the ticker scrolling to the right.
+templ MarqueeReverse(items ...MarqueeItem) {
+	@MarqueeDir(true, items...)
+}
+
+// MarqueeDir renders an infinitely scrolling ticker in either direction.
+// reverse=false scrolls left, reverse=true scrolls right. Mechanically
+// identical to the cyberpunk version (track rendered twice, looping at
+// translateX(-50%)); only the type treatment is softened for the general skin.
+templ MarqueeDir(reverse bool, items ...MarqueeItem) {
+	{{list := items
+if len(list) == 0 {
+	list = defaultMarqueeItems()
+}
+	}}
+	<div class="border-b border-border bg-muted/10 overflow-hidden" role="marquee" aria-label="Status ticker">
+		<div class={ "marquee-track text-xs py-2", templ.KV("marquee-track--reverse", reverse) }>
+			for i := 0; i < 2; i++ {
+				<span class="flex items-center">
+					for _, it := range list {
+						<span class={ "mx-4 font-medium", marqueeClass(string(it.Kind)) }>{ it.Text }</span>
+						<span class="text-border select-none" aria-hidden="true">&bull;</span>
+					}
+				</span>
+			}
+		</div>
+	</div>
+}
+
+// MarqueeDisplay is a large, high-impact ticker used for full-screen states
+// like error pages. General skin: bold large text with a subtle dot separator
+// instead of the cyberpunk "//" accent marks. reverse=true scrolls right.
+templ MarqueeDisplay(reverse bool, items ...MarqueeItem) {
+	<div class="bg-muted/20 overflow-hidden select-none w-full" role="marquee" aria-hidden="true">
+		<div class={ "marquee-track py-3", templ.KV("marquee-track--reverse", reverse) }>
+			for i := 0; i < 2; i++ {
+				<span class="flex items-center">
+					for _, it := range items {
+						<span class={ "text-lg font-bold tracking-wide", marqueeClass(string(it.Kind)) }>{ it.Text }</span>
+						<span class="mx-6 text-border text-lg font-bold" aria-hidden="true">&bull;</span>
+					}
+				</span>
+			}
+		</div>
+	</div>
+}

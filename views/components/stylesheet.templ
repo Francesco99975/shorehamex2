@@ -1,0 +1,9 @@
+package components
+
+templ Stylesheet(src string, integrity string) {
+	<link rel="stylesheet" href={ src } integrity={ integrity }/>
+}
+
+templ PreloadStylesheet(src string, integrity string) {
+	<link href={ src } rel="preload" as="style" onload="this.rel='stylesheet'" integrity={ integrity } fetchPriority="high"/>
+}

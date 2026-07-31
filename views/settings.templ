@@ -1,0 +1,31 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+)
+
+templ SettingsProfile(site config.Site, profileProps components.ProfileProps) {
+	@layouts.AuthenticatedLayout(site) {
+		@components.SettingsProfileTab(profileProps)
+	}
+}
+
+templ SettingsSecurity(site config.Site, securityProps components.SecurityProps) {
+	@layouts.AuthenticatedLayout(site) {
+		@components.SettingsSecurityTab(securityProps)
+	}
+}
+
+templ SettingsAccount(site config.Site, accountProps components.AccountProps) {
+	@layouts.AuthenticatedLayout(site) {
+		@components.SettingsAccountTab(accountProps)
+	}
+}
+
+templ SettingsUsers(site config.Site, usersProps components.UsersProps) {
+	@layouts.AuthenticatedLayout(site) {
+		@components.SettingsUsersTab(usersProps)
+	}
+}

@@ -1,0 +1,12 @@
+package layouts
+
+import "github.com/Francesco99975/shorehamex2/internal/config"
+
+// Base layout for unauthenticated pages
+templ Base(site config.Site) {
+	@CoreHTML(site) {
+		<div class="min-h-screen flex flex-col">
+			{ children... }
+		</div>
+	}
+}

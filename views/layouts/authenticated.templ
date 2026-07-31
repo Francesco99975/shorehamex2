@@ -1,0 +1,36 @@
+package layouts
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ AuthenticatedLayout(site config.Site) {
+	@CoreHTML(site) {
+		<div class="min-h-screen flex">
+			@components.AsideAdminNav(site)
+			<div class="flex-1 flex flex-col min-w-0">
+				<!-- Topbar -->
+				<header class="h-16 flex items-center gap-3 px-4 sm:px-6 border-b border-border bg-std/80 backdrop-blur sticky top-0 z-20">
+					<div class="lg:hidden p-2 -ml-1 rounded-lg hover:bg-panel">
+						@ui.IconButton(ui.ButtonProps{
+							Variant: ui.ButtonPrimary,
+							Attrs:   templ.Attributes{"@click": "drawer = true", "aria-label": "Open menu"},
+						}) {
+							@icons.Hamburger("w-5 h-5")
+						}
+					</div>
+					<div>
+						<h1 class="text-lg font-semibold capitalize">{ site.Title }</h1>
+					</div>
+					<div class="ml-auto flex items-center gap-2">
+						@ui.ThemeToggle()
+					</div>
+				</header>
+				{ children... }
+			</div>
+		</div>
+	}
+}

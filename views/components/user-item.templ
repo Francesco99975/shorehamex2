@@ -1,0 +1,54 @@
+package components
+
+import "github.com/google/uuid"
+
+templ UserItem(id uuid.UUID, username, email string, csrf string) {
+	<div id={ "user-" + id.String() } class="bg-std/5 border border-primary/30 dark:border-primary/50 rounded-lg p-4 hover:bg-std/10 transition-all duration-200">
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-3 mb-2">
+					<span class="text-xs font-mono text-std/50 bg-std/10 px-2 py-1 rounded">ID: { id.String() }</span>
+					<span class="font-semibold text-std truncate">{ username }</span>
+				</div>
+				@EmailPartial(id.String(), email)
+			</div>
+			<div class="flex items-center gap-2 shrink-0">
+				<!-- Edit Button (toggles .com <-> .dev) -->
+				<form
+					hx-patch={ "/examples/users/" + id.String() }
+					hx-target={ "#email" + "-" + id.String() }
+					hx-swap="outerHTML"
+				>
+					@CSRF(csrf)
+					<button
+						type="submit"
+						class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-75"
+						title="Toggle email domain"
+					>
+						Edit
+					</button>
+				</form>
+				<!-- Remove Button -->
+				<form
+					hx-delete={ "/examples/users/" + id.String() }
+					hx-target={ "#user-" + id.String() }
+					hx-swap="outerHTML swap:1s"
+					hx-confirm="Are you sure you want to remove this user?"
+				>
+					@CSRF(csrf)
+					<button
+						type="submit"
+						class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-500/50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-75"
+						title="Remove user"
+					>
+						Remove
+					</button>
+				</form>
+			</div>
+		</div>
+	</div>
+}
+
+templ EmailPartial(id string, email string) {
+	<p id={ "email" + "-" + id } class="text-sm text-std/70 truncate">{ email }</p>
+}

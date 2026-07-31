@@ -1,0 +1,81 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+)
+
+// ErrorContentProps drives the centered block of an error page. Every field is
+// optional and falls back to a sensible 500 default, so @ErrorContent(ErrorContentProps{})
+// renders a valid page and callers override only what they need.
+type ErrorContentProps struct {
+	Marquee  string // marquee text to display above the error content
+	Caption  string // small mono caption above the title, e.g. "// fatal exception"
+	Code     string // the big glitch numeral/word, e.g. "500"
+	Title    string // uppercase line under the title, e.g. "Internal Server Error"
+	Detail   string // full error text shown in the mono panel
+	HomeHref string // target of the return button (defaults to "/")
+	HomeText string // return button label (defaults to "Return Home")
+}
+
+// ErrorContent renders the centered content of an error page (caption, title,
+// subtitle, detail panel, and a return-home link). It is chrome-agnostic: drop
+// it inside any layout — e.g. between the ErrorHeader/ErrorFooter marquees.
+//
+// Cyberpunk styling is expressed purely through Tailwind design tokens
+// (bg-std / text-error / text-accent / …) plus the shared `glitch` and
+// `cp-panel` utilities, so it themes with the rest of the app for free.
+templ Error(site config.Site, p ErrorContentProps) {
+	{{marquee := p.Marquee
+if marquee == "" {
+	marquee = "Error"
+}
+	}}
+	{{caption := p.Caption
+if caption == "" {
+	caption = "unexpected error occurred"
+}
+	}}
+	{{code := p.Code
+if code == "" {
+	code = "500"
+}
+	}}
+	{{title := p.Title
+if title == "" {
+	title = "Internal Server Error"
+}
+	}}
+	{{href := p.HomeHref
+if href == "" {
+	href = "/"
+}
+	}}
+	{{homeText := p.HomeText
+if homeText == "" {
+	homeText = "Return Home"
+}
+	}}
+	@layouts.Error(site, marquee) {
+		<main class="flex-1 flex flex-col items-center justify-center gap-5 text-center px-5 py-12">
+			<p class="font-mono text-[11px] uppercase tracking-[0.35em] text-accent/70">{ caption }</p>
+			<h1
+				class="font-sans font-black uppercase leading-[0.95] tracking-wide text-error text-[clamp(2.75rem,14vw,7rem)]"
+				data-text={ code }
+			>{ code }</h1>
+			<p class="font-sans font-bold uppercase tracking-[0.15em] text-fg text-[clamp(1rem,4vw,1.5rem)]">{ title }</p>
+			if p.Detail != "" {
+				<p class="max-w-2xl font-mono text-sm leading-relaxed text-muted px-5 py-4 break-words">
+					{ p.Detail }
+				</p>
+			}
+			<a
+				href={ templ.SafeURL(href) }
+				class="mt-2 inline-flex items-center gap-2 px-6 py-3 font-mono text-xs font-bold uppercase tracking-[0.25em] bg-accent text-std border border-accent transition-colors hover:bg-primary hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+			>
+				<span aria-hidden="true" class="text-base leading-none">&larr;</span>
+				{ homeText }
+			</a>
+		</main>
+	}
+}

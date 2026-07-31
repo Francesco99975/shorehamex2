@@ -1,0 +1,475 @@
+package ui
+
+import "strconv"
+import "fmt"
+
+templ StringInput(id string, typology string, label string, required bool) {
+	<div class="flex flex-col w-full gap-1.5 py-2">
+		<label for={ id } class="text-sm font-medium text-fg">
+			{ label }
+		</label>
+		<input class="field" id={ id } name={ id } type={ typology } required?={ required }/>
+	</div>
+}
+
+templ SimpleCheckboxInput(id string, label string, required bool) {
+	<div class="flex items-center gap-2 m-1">
+		<input type="checkbox" id={ id } name={ id } required?={ required } class="check"/>
+		<label for={ id } class="text-sm text-fg">{ label }</label>
+	</div>
+}
+
+templ RadioInput(id string, name string, label string, value string, required bool) {
+	<div class="flex items-center gap-2 py-0.5">
+		<input id={ id } name={ name } type="radio" value={ value } required?={ required } class="radio"/>
+		<label for={ id } class="text-sm text-fg">{ label }</label>
+	</div>
+}
+
+templ RadioField(id string, label string, required bool) {
+	<fieldset class="space-y-2">
+		<legend class="text-sm font-medium text-fg mb-1">{ label }</legend>
+		@RadioInput(id+"y", id, "Yes", "1", required)
+		@RadioInput(id+"n", id, "No", "0", required)
+	</fieldset>
+}
+
+templ SexRadioField(id string, label string, required bool) {
+	<fieldset class="space-y-2">
+		<legend class="text-sm font-medium text-fg mb-1">{ label }</legend>
+		@RadioInput(id+"y", id, "Male", "male", required)
+		@RadioInput(id+"n", id, "Female", "female", required)
+	</fieldset>
+}
+
+templ BoolRadioField(id string, label string, required bool) {
+	<fieldset class="space-y-2">
+		<legend class="text-sm md:text-base font-medium text-fg mb-3 leading-relaxed">{ label }</legend>
+		<div class="flex flex-wrap gap-3 md:gap-4">
+			@RadioInput(id+"y", id, "True", "1", required)
+			@RadioInput(id+"n", id, "False", "0", required)
+		</div>
+	</fieldset>
+}
+
+templ MultiRadioField(id string, label string, options []string, adjust int, required bool) {
+	<fieldset class="space-y-2">
+		<legend class="text-sm font-medium text-fg mb-1">{ label }</legend>
+		for index, option := range options {
+			@RadioInput(id+strconv.Itoa(index), id, option, strconv.Itoa(index+adjust), required)
+		}
+	</fieldset>
+}
+
+templ HiddenInput(id string, value string) {
+	<input type="hidden" id={ id } name={ id } value={ value }/>
+}
+
+templ DynamicHiddenInput(id string, value string) {
+	<input type="hidden" id={ id } name={ id } :value={ value }/>
+}
+
+templ ModelOTPInput(id string) {
+	<div>
+		<label class="block text-sm font-medium text-fg mb-2">Verification Code</label>
+		<input
+			type="text"
+			id={ id }
+			x-model={ id }
+			name={ id }
+			inputmode="numeric"
+			pattern="[0-9]*"
+			maxlength="6"
+			placeholder="000000"
+			autocomplete="one-time-code"
+			class="field text-center font-mono text-2xl tracking-[0.5em]"
+			required
+		/>
+	</div>
+}
+
+templ OTPInput(label string, hint string) {
+	<div>
+		<label for="otp" class="block text-sm font-medium text-fg mb-2">{ label }</label>
+		<input
+			type="text"
+			id="otp"
+			name="otp"
+			inputmode="numeric"
+			pattern="[0-9]*"
+			maxlength="6"
+			placeholder="000000"
+			autocomplete="one-time-code"
+			class="field text-center font-mono text-2xl tracking-[0.5em]"
+			required
+		/>
+		<p class="mt-1 text-xs text-muted">{ hint }</p>
+	</div>
+}
+
+templ GenericCodeInput(id string, label string, hint string) {
+	<div>
+		<label for={ id } class="block text-sm font-medium text-fg mb-2">
+			{ label }
+		</label>
+		<input
+			type="text"
+			id={ id }
+			name={ id }
+			placeholder={ fmt.Sprintf("Enter your %s", id) }
+			required
+			maxlength="21"
+			class="field text-center text-lg font-mono tracking-wider"
+		/>
+		<p class="text-xs text-muted mt-2">
+			{ hint }
+		</p>
+	</div>
+}
+
+templ BasicInput(id string, label string, required bool) {
+	<div>
+		<label class="block text-sm font-medium text-fg mb-2" for={ id }>{ label }</label>
+		<input
+			type="text"
+			id={ id }
+			name={ id }
+			class="field"
+			placeholder={ label }
+			required?={ required }
+		/>
+	</div>
+}
+
+templ BasicModelInput(id string, placeholder string, required bool) {
+	<div>
+		<label class="block text-sm font-medium text-fg mb-2" for={ id }>
+			{ children... }
+		</label>
+		<input
+			type="text"
+			id={ id }
+			name={ id }
+			x-model={ id }
+			class="field"
+			placeholder={ placeholder }
+			required?={ required }
+		/>
+	</div>
+}
+
+templ BasicModelPasswordInput(id string, required bool) {
+	<div>
+		<label class="block text-sm font-medium text-fg mb-2" for={ id }>
+			{ children... }
+		</label>
+		<input
+			type="password"
+			id={ id }
+			name={ id }
+			x-model={ id }
+			class="field"
+			placeholder="••••••••"
+			required?={ required }
+		/>
+	</div>
+}
+
+templ BasicPasswordInput(id string, label string, required bool) {
+	<div>
+		<label class="block text-sm font-medium text-fg mb-2" for={ id }>{ label }</label>
+		<input
+			type="password"
+			id={ id }
+			name={ id }
+			class="field"
+			placeholder="••••••••"
+			required?={ required }
+			minlength="8"
+		/>
+	</div>
+}
+
+templ BasicCheckbox(id string, label string, required bool, checked bool) {
+	<div class="flex items-center gap-2">
+		<input
+			type="checkbox"
+			id={ id }
+			name={ id }
+			class="check"
+			checked?={ checked }
+			required?={ required }
+		/>
+		<label for={ id } class="text-sm text-fg/80 cursor-pointer">
+			{ label }
+		</label>
+	</div>
+}
+
+templ BasicForgotPassword() {
+	<a
+		href="/reset"
+		hx-boost="true"
+		hx-push-url="true"
+		hx-target="body"
+		class="text-sm font-medium text-primary hover:text-accent transition-colors"
+	>
+		Forgot password?
+	</a>
+}
+
+// InputType is the typed enum over standard HTML <input type="..."> values.
+type InputType string
+
+const (
+	InputText          InputType = "text"
+	InputEmail         InputType = "email"
+	InputPassword      InputType = "password"
+	InputURL           InputType = "url"
+	InputTel           InputType = "tel"
+	InputNumber        InputType = "number"
+	InputSearch        InputType = "search"
+	InputDate          InputType = "date"
+	InputTime          InputType = "time"
+	InputDatetimeLocal InputType = "datetime-local"
+	InputMonth         InputType = "month"
+	InputWeek          InputType = "week"
+	InputColor         InputType = "color"
+	InputFile          InputType = "file"
+	InputHidden        InputType = "hidden"
+)
+
+// String resolves the type attribute string, falling back to "text" when zero.
+func (t InputType) String() string {
+	if t == "" {
+		return "text"
+	}
+	return string(t)
+}
+
+// FieldLabel is the shared label chrome: a small caption with an optional
+// right-aligned hint (e.g. "required", "optional", character counters).
+templ FieldLabel(label, hint string) {
+	<div class="text-sm font-medium text-fg mb-1.5 flex justify-between items-center">
+		<span>{ label }</span>
+		if hint != "" {
+			<span class="text-xs font-normal text-muted">{ hint }</span>
+		}
+	</div>
+}
+
+// DangerLabel is the error-tinted variant of FieldLabel.
+templ DangerLabel(label, hint string) {
+	<div class="text-sm font-medium text-error mb-1.5 flex justify-between items-center">
+		<span>{ label }</span>
+		if hint != "" {
+			<span class="text-xs font-normal text-muted">{ hint }</span>
+		}
+	</div>
+}
+
+// InputProps is the *static* config for @Input. Dynamic state (value, disabled,
+// validation, x-model, hx-* hooks, @blur handlers, :class, :aria-invalid, etc.)
+// flows through Attrs and is owned by the parent's Alpine scope.
+type InputProps struct {
+	Name        string
+	Type        InputType
+	Label       string
+	Hint        string
+	Placeholder string
+	Required    bool
+	Danger      bool
+	Attrs       templ.Attributes
+}
+
+// Input renders a labelled single-line field. The children slot is for
+// parent-owned inline feedback (error/help spans bound with x-show + x-text).
+templ Input(p InputProps) {
+	<label class="block" x-data="{ err: '' }">
+		if !p.Danger {
+			@FieldLabel(p.Label, p.Hint)
+		} else {
+			@DangerLabel(p.Label, p.Hint)
+		}
+		<input
+			type={ p.Type.String() }
+			id={ p.Name }
+			name={ p.Name }
+			placeholder={ p.Placeholder }
+			required?={ p.Required }
+			class="field"
+			{ p.Attrs... }
+		/>
+		<p x-show="err" x-text="err" x-cloak class="mt-1 text-xs text-error"></p>
+	</label>
+}
+
+// TextareaProps — multi-line input. MaxLength > 0 enables a built-in live char
+// counter rendered in the label hint slot. Rows defaults to 3.
+type TextareaProps struct {
+	Name        string
+	Label       string
+	Placeholder string
+	Rows        int
+	MaxLength   int
+	Required    bool
+	Attrs       templ.Attributes
+}
+
+// Textarea is a labelled multi-line input.
+templ Textarea(p TextareaProps) {
+	if p.MaxLength > 0 {
+		<div x-data="{ n: 0 }" x-init="$nextTick(() => { n = ($refs.ta && $refs.ta.value.length) || 0 })">
+			<div class="text-sm font-medium text-fg mb-1.5 flex justify-between items-center">
+				<span>{ p.Label }</span>
+				<span class="text-xs font-normal text-muted"><span x-text="n"></span>/{ itoa(p.MaxLength) }</span>
+			</div>
+			<textarea
+				x-ref="ta"
+				@input="n = $el.value.length"
+				id={ p.Name }
+				name={ p.Name }
+				placeholder={ p.Placeholder }
+				rows={ itoa(nonZero(p.Rows, 3)) }
+				required?={ p.Required }
+				maxlength={ itoa(p.MaxLength) }
+				class="field resize-y"
+				{ p.Attrs... }
+			></textarea>
+			{ children... }
+		</div>
+	} else {
+		<label class="block">
+			@FieldLabel(p.Label, "")
+			<textarea
+				id={ p.Name }
+				name={ p.Name }
+				placeholder={ p.Placeholder }
+				rows={ itoa(nonZero(p.Rows, 3)) }
+				required?={ p.Required }
+				class="field resize-y"
+				{ p.Attrs... }
+			></textarea>
+			{ children... }
+		</label>
+	}
+}
+
+// SearchProps — search field with a leading magnifier and HTMX live-search hooks.
+type SearchProps struct {
+	Name           string
+	Label          string
+	Placeholder    string
+	TargetID       string
+	GetURL         string
+	DebounceMS     int
+	ExternalTarget bool
+	PushURL        bool
+	Include        string
+	Attrs          templ.Attributes
+}
+
+// Search is a debounced live-search input.
+templ Search(p SearchProps) {
+	<div>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="relative">
+			<svg class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<circle cx="11" cy="11" r="7"></circle>
+				<line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+			</svg>
+			if p.TargetID != "" && p.GetURL != "" {
+				<input
+					type="search"
+					id={ nonEmpty(p.Name, "q") }
+					name={ nonEmpty(p.Name, "q") }
+					placeholder={ nonEmpty(p.Placeholder, "Search…") }
+					class="field pl-9"
+					hx-get={ p.GetURL }
+					hx-trigger={ "keyup changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
+					hx-target={ "#" + p.TargetID }
+					hx-swap="innerHTML"
+					if p.PushURL {
+						hx-push-url="true"
+					}
+					if p.Include != "" {
+						hx-include={ p.Include }
+					}
+					{ p.Attrs... }
+				/>
+			} else {
+				<input
+					type="search"
+					id={ nonEmpty(p.Name, "q") }
+					name={ nonEmpty(p.Name, "q") }
+					placeholder={ nonEmpty(p.Placeholder, "Search…") }
+					class="field pl-9"
+					{ p.Attrs... }
+				/>
+			}
+		</div>
+		if p.TargetID != "" && !p.ExternalTarget {
+			<div id={ p.TargetID } class="mt-2 text-sm text-muted"></div>
+		}
+		{ children... }
+	</div>
+}
+
+// NumberStepperProps — bounded integer input with − / + buttons, Alpine-driven.
+type NumberStepperProps struct {
+	Name     string
+	Label    string
+	Min      int
+	Max      int
+	Step     int
+	Required bool
+	Attrs    templ.Attributes
+}
+
+// NumberStepper is a compact integer control with glyph buttons at each end.
+templ NumberStepper(p NumberStepperProps) {
+	{{step := p.Step
+if step == 0 {
+	step = 1
+}
+	}}
+	<div
+		x-data={ "{ n: " + itoa(p.Min) +
+				", min: " + itoa(p.Min) +
+				", max: " + itoa(p.Max) +
+				", step: " + itoa(step) + " }" }
+	>
+		if p.Label != "" {
+			@FieldLabel(p.Label, "")
+		}
+		<div class="flex items-stretch">
+			<button
+				type="button"
+				@click="n = Math.max(min, n - step)"
+				class="btn-base w-10 grid place-items-center rounded-l-lg bg-muted/15 border border-border text-fg font-bold hover:bg-muted/25"
+				aria-label="Decrease"
+			>−</button>
+			<input
+				type="number"
+				id={ p.Name }
+				name={ p.Name }
+				x-model.number="n"
+				:min="min"
+				required?={ p.Required }
+				:max="max || undefined"
+				:step="step"
+				class="field text-center rounded-none border-x-0"
+				{ p.Attrs... }
+			/>
+			<button
+				type="button"
+				@click="n = Math.min(max || Number.MAX_SAFE_INTEGER, n + step)"
+				class="btn-base w-10 grid place-items-center rounded-r-lg bg-primary text-primary-fg font-bold"
+				aria-label="Increase"
+			>+</button>
+		</div>
+		{ children... }
+	</div>
+}

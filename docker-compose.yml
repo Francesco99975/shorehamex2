@@ -1,0 +1,73 @@
+services:
+  shorehamex2db:
+    container_name: shorehamex2db
+    image: postgres:15.3-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U Francesco99975 -d shorehamex2db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    labels:
+      - traefik.enable=false
+    networks:
+      - shorehamex2net
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+    ports:
+      - "5467:5432"
+    volumes:
+      - shorehamex2pgdata:/var/lib/postgresql/data
+      - shorehamex2pgconf:/etc/postgresql
+      - shorehamex2pglog:/var/log/postgresql
+  shorehamex2:
+    container_name: shorehamex2
+    image: shorehamex2
+    restart: unless-stopped
+    depends_on:
+      shorehamex2db:
+        condition: service_healthy
+    environment:
+      - GO_ENV
+      - HOST
+      - PORT
+      - DSN
+      - NTFY
+      - METRICS_SECRET
+      - PROMETHEUS
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3636/healthcheck"]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.shorehamex2.rule=Host(`shorehamex2.example.com`)
+      - traefik.http.routers.shorehamex2.entrypoints=web,websecure
+      - traefik.http.routers.shorehamex2.service=shorehamex2
+      - traefik.http.services.shorehamex2.loadbalancer.server.port=3636
+      - traefik.http.routers.shorehamex2.tls=true
+      - traefik.http.routers.shorehamex2.tls.certresolver=letsencrypt
+      - traefik.http.routers.shorehamex2.middlewares=websocket-headers,forwardedheaders
+    networks:
+      - shorehamex2net
+      - proxy
+      - monitoring
+    ports:
+      - 3636:3636
+
+networks:
+  proxy:
+    external: true
+  monitoring:
+    external: true
+  shorehamex2net:
+    driver: bridge
+    external: false
+
+volumes:
+  shorehamex2pgdata:
+    driver: local
+  shorehamex2pgconf:
+    driver: local
+  shorehamex2pglog:
+    driver: local

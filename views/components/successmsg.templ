@@ -1,0 +1,20 @@
+package components
+
+templ SuccessMsg(msg string) {
+	<!-- Success Message (shown after form submission) -->
+	<div
+		x-transition:enter="transition ease-out duration-300"
+		x-transition:enter-start="opacity-0 transform -translate-y-4"
+		x-transition:enter-end="opacity-100 transform translate-y-0"
+		class="bg-success/10 dark:bg-success/20 border-l-4 border-success p-4 rounded-md mb-6"
+		x-cloak
+	>
+		<div class="flex items-center">
+			<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+				<polyline points="22 4 12 14.01 9 11.01"></polyline>
+			</svg>
+			<span class="text-success font-medium">{ msg }</span>
+		</div>
+	</div>
+}

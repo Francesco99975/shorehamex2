@@ -1,0 +1,91 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]   # Must exactly match the name: CI from your CI file
+    types:
+      - completed
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Build Docker image
+        run: make build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: shorehamex2-image
+          path: shorehamex2.tar
+          retention-days: 1
+      - name: Upload docker-compose file
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-compose
+          path: docker-compose.yml
+          retention-days: 7
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: production
+      url: https://shorehamex2.example.com
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v8
+        with:
+          name: shorehamex2-image
+
+      - name: Download docker-compose
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-compose
+
+      - name: Connect to Tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci  # Adjust this tag as needed for your Tailnet ACLs
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan prod_server >> ~/.ssh/known_hosts
+
+      - name: Deploy to production # If using doppler, Remember to run: doppler setup on the prod server
+        run: |
+          # Transfer files to production server
+          scp shorehamex2.tar docker-compose.yml Francesco99975@prod_server:~/apps/shorehamex2/
+
+          # SSH into server and deploy
+          ssh Francesco99975@prod_server << 'EOF'
+            cd ~/apps/shorehamex2
+            pwd
+            docker load < shorehamex2.tar
+            doppler run -- docker compose up -d
+            rm shorehamex2.tar
+            docker system prune -f
+          EOF

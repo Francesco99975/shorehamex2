@@ -1,0 +1,44 @@
+package components
+
+type TabItemProps struct {
+	ID       string
+	Label    string
+	Icon     templ.Component
+	IsActive bool
+	HasBadge bool
+	Href     string
+}
+
+templ TabItem(props TabItemProps) {
+	<a
+		href={ templ.SafeURL(props.Href) }
+		@click={ "activeTab = '" + props.ID + "'" }
+		:class={ "activeTab === '" + props.ID + "' ? 'text-primary' : 'text-primary/40'" }
+		class="flex-1 flex flex-col items-center justify-center gap-1 hover:text-primary transition-colors relative"
+	>
+		<div class="w-6 h-6">
+			@props.Icon
+		</div>
+		if props.HasBadge {
+			<div class="absolute top-1 right-1/4 w-2 h-2 bg-error rounded-full"></div>
+		}
+		<span class="text-xs font-medium">{ props.Label }</span>
+	</a>
+}
+
+templ TabItemDesktop(props TabItemProps) {
+	<a
+		href={ templ.SafeURL(props.Href) }
+		@click={ "activeTab = '" + props.ID + "'" }
+		:class={ "activeTab === '" + props.ID + "' ? 'bg-primary/10 text-primary border-primary/20' : 'text-primary/60 border-transparent hover:bg-primary/5'" }
+		class="flex items-center gap-3 px-6 py-2.5 rounded-lg border transition-colors relative"
+	>
+		<div class="w-5 h-5">
+			@props.Icon
+		</div>
+		<span class="font-medium">{ props.Label }</span>
+		if props.HasBadge {
+			<div class="w-2 h-2 bg-error rounded-full"></div>
+		}
+	</a>
+}

@@ -1,0 +1,13 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/internal/config"
+import "github.com/Francesco99975/shorehamex2/views/ui"
+
+templ Header(site config.Site) {
+	@HeaderCore(site) {
+		@ui.HeaderBrand(site.AppName, site.Title, "/")
+		@ui.HeaderActions() {
+			@ui.ThemeToggle()
+		}
+	}
+}

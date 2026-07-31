@@ -1,0 +1,40 @@
+{
+  "name": "client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build:watch": "vite build --watch --emptyOutDir",
+    "build": "vite build --emptyOutDir",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "prettier": "prettier --write src/",
+    "generate-assets": "svgo public/icon.svg -o public/icon-optimized.svg && pwa-assets-generator --config pwa-assets.config.ts",
+    "bench": "DIR=./benchmarks/lighthouse && mkdir -p $DIR && TIMESTAMP=$(date +%Y%m%d_%H%M%S) && npx lighthouse http://localhost:3636 --chrome-flags='--headless --no-sandbox' --only-categories=performance,accessibility,best-practices,seo --output=json,html --output-path=./benchmarks/lighthouse/$TIMESTAMP && npm run bench:format && npm run bench:html",
+    "bench:format": "zsh -c 'LATEST=$(ls benchmarks/lighthouse/ | grep .json | tail -1) && HTML=$(ls benchmarks/lighthouse/ | grep .html | head -1) && JSON_FILE=benchmarks/lighthouse/$LATEST && echo \"✅ Results saved to benchmarks/lighthouse\" && echo \"📊 Performance: $(jq .categories.performance.score $JSON_FILE)\" && echo \"♿ Accessibility: $(jq .categories.accessibility.score $JSON_FILE)\" && echo \"🔧 Best Practices: $(jq \".categories[\\\"best-practices\\\"].score\" $JSON_FILE)\" && echo \"🔍 SEO: $(jq .categories.seo.score $JSON_FILE)\" && echo \"📁 View HTML: chromium benchmarks/lighthouse/$HTML\"'",
+    "bench:html": "zsh -c 'LATEST=$(ls benchmarks/lighthouse/ | grep .html | tail -1) && chromium benchmarks/lighthouse/$LATEST'"
+  },
+  "author": "Francesco99975",
+  "license": "ISC",
+  "dependencies": {
+    "@alpinejs/collapse": "^3.15.12",
+    "@alpinejs/focus": "^3.15.12",
+    "alpinejs": "^3.15.11",
+    "htmx.org": "^2.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/alpinejs": "^3.13.11",
+    "@types/node": "^25.5.2",
+    "@vite-pwa/assets-generator": "^1.0.2",
+    "fast-glob": "^3.3.3",
+    "lightningcss": "^1.32.0",
+    "svgo": "^4.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "8.0.3",
+    "vite-plugin-manifest-sri": "^0.2.0",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}

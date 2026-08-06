@@ -801,6 +801,55 @@ func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams
 	return &i, err
 }
 
+const updateUserFullName = `-- name: UpdateUserFullName :one
+UPDATE users
+SET
+    full_name = $1
+WHERE id = $2
+RETURNING id, role, username, email, full_name, title, is_active, is_email_verified,
+         twofa_enabled, last_login, created_at, updated_at
+`
+
+type UpdateUserFullNameParams struct {
+	FullName string    `json:"full_name"`
+	ID       uuid.UUID `json:"id"`
+}
+
+type UpdateUserFullNameRow struct {
+	ID              uuid.UUID          `json:"id"`
+	Role            string             `json:"role"`
+	Username        string             `json:"username"`
+	Email           string             `json:"email"`
+	FullName        string             `json:"full_name"`
+	Title           string             `json:"title"`
+	IsActive        bool               `json:"is_active"`
+	IsEmailVerified bool               `json:"is_email_verified"`
+	TwofaEnabled    bool               `json:"twofa_enabled"`
+	LastLogin       pgtype.Timestamptz `json:"last_login"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateUserFullName(ctx context.Context, arg UpdateUserFullNameParams) (*UpdateUserFullNameRow, error) {
+	row := q.db.QueryRow(ctx, updateUserFullName, arg.FullName, arg.ID)
+	var i UpdateUserFullNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Role,
+		&i.Username,
+		&i.Email,
+		&i.FullName,
+		&i.Title,
+		&i.IsActive,
+		&i.IsEmailVerified,
+		&i.TwofaEnabled,
+		&i.LastLogin,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
 UPDATE users
 SET last_login = NOW()

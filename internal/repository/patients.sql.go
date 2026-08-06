@@ -34,7 +34,7 @@ INSERT INTO patients (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at
+RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
 type CreatePatientParams struct {
@@ -80,6 +80,7 @@ func (q *Queries) CreatePatient(ctx context.Context, arg CreatePatientParams) (*
 		&i.LastActivityAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notes,
 	)
 	return &i, err
 }
@@ -109,7 +110,7 @@ func (q *Queries) DeletePatient(ctx context.Context, arg DeletePatientParams) er
 
 const getPatient = `-- name: GetPatient :one
 
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at FROM patients
+SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE id = $1
   AND is_developer_data = is_developer_user($2)
 `
@@ -170,12 +171,13 @@ func (q *Queries) GetPatient(ctx context.Context, arg GetPatientParams) (*Patien
 		&i.LastActivityAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notes,
 	)
 	return &i, err
 }
 
 const getPatientByMRN = `-- name: GetPatientByMRN :one
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at FROM patients
+SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE mrn = $1
   AND is_developer_data = is_developer_user($2)
 `
@@ -204,12 +206,13 @@ func (q *Queries) GetPatientByMRN(ctx context.Context, arg GetPatientByMRNParams
 		&i.LastActivityAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notes,
 	)
 	return &i, err
 }
 
 const listPatients = `-- name: ListPatients :many
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at FROM patients
+SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
   AND is_developer_data = is_developer_user($1)
 ORDER BY full_name
@@ -249,6 +252,7 @@ func (q *Queries) ListPatients(ctx context.Context, arg ListPatientsParams) ([]*
 			&i.LastActivityAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -261,7 +265,7 @@ func (q *Queries) ListPatients(ctx context.Context, arg ListPatientsParams) ([]*
 }
 
 const listPatientsByStatus = `-- name: ListPatientsByStatus :many
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at FROM patients
+SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
   AND computed_status = $1
   AND is_developer_data = is_developer_user($2)
@@ -307,6 +311,7 @@ func (q *Queries) ListPatientsByStatus(ctx context.Context, arg ListPatientsBySt
 			&i.LastActivityAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -319,7 +324,7 @@ func (q *Queries) ListPatientsByStatus(ctx context.Context, arg ListPatientsBySt
 }
 
 const searchPatients = `-- name: SearchPatients :many
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at FROM patients
+SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
   AND is_developer_data = is_developer_user($1)
   AND (full_name ILIKE '%' || $2 || '%' OR mrn ILIKE '%' || $2 || '%')
@@ -360,6 +365,7 @@ func (q *Queries) SearchPatients(ctx context.Context, arg SearchPatientsParams) 
 			&i.LastActivityAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -376,7 +382,7 @@ UPDATE patients
 SET is_active = $2
 WHERE id = $1
   AND is_developer_data = is_developer_user($3)
-RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at
+RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
 type SetPatientActiveParams struct {
@@ -404,6 +410,7 @@ func (q *Queries) SetPatientActive(ctx context.Context, arg SetPatientActivePara
 		&i.LastActivityAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notes,
 	)
 	return &i, err
 }
@@ -418,7 +425,7 @@ SET
     sex = $6
 WHERE id = $1
   AND is_developer_data = is_developer_user($7)
-RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at
+RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
 type UpdatePatientDetailsParams struct {
@@ -457,6 +464,7 @@ func (q *Queries) UpdatePatientDetails(ctx context.Context, arg UpdatePatientDet
 		&i.LastActivityAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Notes,
 	)
 	return &i, err
 }

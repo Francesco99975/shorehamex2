@@ -594,6 +594,7 @@ type Querier interface {
 	UpdateTestDefinitionMetadata(ctx context.Context, arg UpdateTestDefinitionMetadataParams) (*TestDefinition, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (*UpdateUserRow, error)
 	UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) (*UpdateUserEmailRow, error)
+	UpdateUserFullName(ctx context.Context, arg UpdateUserFullNameParams) (*UpdateUserFullNameRow, error)
 	UpdateUserLastLogin(ctx context.Context, id uuid.UUID) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateUserUsername(ctx context.Context, arg UpdateUserUsernameParams) (*UpdateUserUsernameRow, error)

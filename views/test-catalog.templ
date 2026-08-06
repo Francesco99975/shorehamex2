@@ -9,72 +9,57 @@ import (
 	"github.com/Francesco99975/shorehamex2/views/ui"
 )
 
-func testDomainOptions() []ui.DropOption {
-	all := []enums.TestDomain{enums.TestDomains.ANXIETY, enums.TestDomains.DEPRESSION, enums.TestDomains.SOMATIC, enums.TestDomains.PERSONALITY}
-	out := []ui.DropOption{}
-	for _, r := range all {
-		out = append(out, ui.DropOption{Value: r.String(), Label: r.String()})
-	}
-	return out
-}
-func scoringOptions() []ui.DropOption {
-	all := []enums.ScoringMethod{enums.ScoringMethods.SUM_BANDED, enums.ScoringMethods.MULTISCALE_PROFILE}
-	out := []ui.DropOption{}
-	for _, r := range all {
-		out = append(out, ui.DropOption{Value: r.String(), Label: r.String()})
-	}
-	return out
-}
-
 templ TestCatalog(site config.Site, testDefinitions []models.TestDefinitionView) {
 	@layouts.AuthenticatedLayout(site) {
 		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
 			<div class="space-y-4">
 				<section class="flex flex-wrap items-center justify-between gap-3" x-data="{ newTest: false }">
 					@TestCountPartial(len(testDefinitions), false)
-					@ui.Button(ui.ButtonProps{
-						Attrs: templ.Attributes{"@click": "newTest = true"},
-					}) {
-						New test
-					}
-					@ui.Modal(ui.ModalProps{
-						Title:    "Add a new test",
-						OpenExpr: "newTest",
-						Subtitle: "Register an instrument definition backed by a source file.",
-					}) {
-						<form
-							hx-post="/tests"
-							hx-target="#test-catalog"
-							hx-swap="afterbegin"
-							hx-encoding="multipart/form-data"
-							{ ui.WithLoading("upload-test-indicator")... }
-							@htmx:after-request="if(event.detail.successful) newTest = false"
-							class="p-6 space-y-6"
-						>
-							<!-- Administration -->
-							<div class="space-y-4">
-								@ui.FileUpload(ui.FileUploadProps{
-									Name:      "test_file",
-									Label:     "Upload Test JSON File Definition",
-									Accept:    "application/json",
-									Multiple:  false,
-									Required:  true,
-									MaxSizeMB: 2,
-									Hint:      "test file must be a JSON file",
-								})
-							</div>
-							@ui.Button(ui.ButtonProps{
-								Variant: ui.ButtonAccent,
-								Size:    ui.ButtonLG,
-								FullW:   true,
-								Type:    ui.TypeSubmit,
-								Loading: ui.LoadingConfig{
-									IndicatorID: "upload-test-indicator",
-								},
-							}) {
-								Upload New Test
-							}
-						</form>
+					if site.CurrentUser.Role == enums.Roles.DEVELOPER.String() {
+						@ui.Button(ui.ButtonProps{
+							Size:  ui.ButtonLG,
+							Attrs: templ.Attributes{"@click": "newTest = true"},
+						}) {
+							<span class="font-bold">New Test</span>
+						}
+						@ui.Modal(ui.ModalProps{
+							Title:    "Add a new test",
+							OpenExpr: "newTest",
+							Subtitle: "Register an instrument definition backed by a source file.",
+						}) {
+							<form
+								hx-post="/tests"
+								hx-target="#test-catalog"
+								hx-swap="afterbegin"
+								hx-encoding="multipart/form-data"
+								{ ui.WithLoading("upload-test-indicator")... }
+								@htmx:after-request="if(event.detail.successful) newTest = false"
+								class="p-6 space-y-6"
+							>
+								<!-- Administration -->
+								<div class="space-y-4">
+									@ui.FileUpload(ui.FileUploadProps{
+										Name:      "test_file",
+										Label:     "Upload Test JSON File Definition",
+										Accept:    "application/json",
+										Multiple:  false,
+										Required:  true,
+										MaxSizeMB: 2,
+									})
+								</div>
+								@ui.Button(ui.ButtonProps{
+									Variant: ui.ButtonAccent,
+									Size:    ui.ButtonLG,
+									FullW:   true,
+									Type:    ui.TypeSubmit,
+									Loading: ui.LoadingConfig{
+										IndicatorID: "upload-test-indicator",
+									},
+								}) {
+									Upload New Test
+								}
+							</form>
+						}
 					}
 				</section>
 				<section id="test-catalog" class="grid md:grid-cols-2 gap-4">

@@ -46,6 +46,16 @@ var pageMeta = map[string]PageMeta{
 		Description: "Clinical assessment console - Dashboard",
 		Indexable:   false,
 	},
+	"/patients": {
+		Title:       "Patients",
+		Description: "Clinical assessment console - Patients",
+		Indexable:   false,
+	},
+	"/assessments": {
+		Title:       "Assessments",
+		Description: "Clinical assessment console - Assessments",
+		Indexable:   false,
+	},
 	"/tests": {
 		Title:       "Tests",
 		Description: "Clinical assessment console - Tests",

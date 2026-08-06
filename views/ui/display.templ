@@ -1,5 +1,7 @@
 package ui
 
+import "strconv"
+
 templ DataListGroup() {
 	<div class="p-4 sm:p-6">
 		<dl class="grid grid-cols-2 gap-3 sm:gap-4">
@@ -18,32 +20,34 @@ type StatCardProps struct {
 }
 
 templ StatCard(p StatCardProps) {
-	<div class="neon-border clip-panel p-3">
-		<dt class="font-mono text-[10px] text-accent/70 uppercase">{ p.Label }</dt>
-		<dd class="text-2xl font-bold neon-primary mt-1">{ p.Value }</dd>
+	<div class="card p-4 transition-shadow hover:shadow-md">
+		<dt class="text-xs text-muted font-medium uppercase tracking-wide">{ p.Label }</dt>
+		<dd class="text-2xl font-bold text-foreground mt-1">{ p.Value }</dd>
 		if p.Delta != "" {
-			<div class={ "font-mono text-[10px] mt-0.5", nonEmpty(p.DeltaClass, "text-accent") }>{ p.Delta }</div>
+			<div class={ "text-xs font-medium mt-1", nonEmpty(p.DeltaClass, "text-muted") }>{ p.Delta }</div>
 		}
 	</div>
 }
 
-// Card is a generic container with a neon border + clipped corners.
-// Use Title/Eyebrow for a standard header, or pass children only for a blank canvas.
+// Card is a generic container with a soft border, rounded corners and a subtle
+// shadow. Use Title/Eyebrow for a standard header, or pass children only for a
+// blank canvas. Padded defaults to true; set it false for edge-to-edge content
+// like tables.
 type CardProps struct {
-	Eyebrow string // monospace caption above the title
+	Eyebrow string // small caption above the title
 	Title   string
-	Padded  bool // default true; set false to zero padding (e.g. for tables)
+	Padded  bool
 }
 
 templ Card(p CardProps) {
-	<article class={ "neon-border clip-panel", templ.KV("p-4", !p.Padded || p.Padded) }>
+	<article class={ "card", templ.KV("p-5", p.Padded), templ.KV("p-0 overflow-hidden", !p.Padded) }>
 		if p.Eyebrow != "" || p.Title != "" {
-			<header class="mb-3">
+			<header class={ "mb-4", templ.KV("p-5 pb-0", !p.Padded) }>
 				if p.Eyebrow != "" {
-					<div class="font-mono text-[10px] text-accent/70 uppercase">{ p.Eyebrow }</div>
+					<div class="text-xs text-muted font-medium uppercase tracking-wide">{ p.Eyebrow }</div>
 				}
 				if p.Title != "" {
-					<h3 class="neon-primary font-bold tracking-widest">{ p.Title }</h3>
+					<h3 class="text-lg font-semibold text-foreground mt-0.5">{ p.Title }</h3>
 				}
 			</header>
 		}
@@ -54,7 +58,7 @@ templ Card(p CardProps) {
 // Column definition for @DataTable.
 type Column struct {
 	Header string
-	Key    string // row key — used for header text only here; rendering is done by the caller via @Row
+	Key    string
 	// Align: "" (default left), "right", "center"
 	Align string
 	// HideBelow: optional Tailwind breakpoint where this column disappears ("sm", "md", "lg").
@@ -84,15 +88,14 @@ func colHide(b string) string {
 }
 
 // DataTable renders the <table> chrome with a column header row. Body rows are
-// passed via children using the @TableRow component so apps can do their own
-// rendering with full type safety.
+// passed via children using @TableRow so apps do their own type-safe rendering.
 templ DataTable(cols ...Column) {
-	<div class="neon-border clip-panel overflow-auto">
-		<table class="w-full font-mono text-xs">
+	<div class="card p-0 overflow-auto">
+		<table class="w-full text-sm">
 			<thead>
-				<tr class="border-b border-border">
+				<tr class="border-b border-border bg-muted/30">
 					for _, c := range cols {
-						<th class={ "px-4 py-3 text-accent uppercase tracking-widest", colAlign(c.Align), colHide(c.HideBelow) }>
+						<th class={ "px-4 py-3 font-medium text-muted text-xs uppercase tracking-wide", colAlign(c.Align), colHide(c.HideBelow) }>
 							{ c.Header }
 						</th>
 					}
@@ -107,7 +110,7 @@ templ DataTable(cols ...Column) {
 
 // TableRow wraps a <tr> with the hover style. Place <td>'s inside as children.
 templ TableRow() {
-	<tr class="border-b border-border/60 hover:bg-accent/5">
+	<tr class="border-b border-border last:border-0 transition-colors hover:bg-muted/40">
 		{ children... }
 	</tr>
 }
@@ -120,7 +123,7 @@ type ActivityGridProps struct {
 	Values []float64
 }
 
-// ActivityGrid draws a Cols×Rows heatmap. Intensities shift from transparent →
+// ActivityGrid draws a Cols×Rows heatmap. Intensities shift from surface →
 // border → accent → primary. Pass explicit Values for real data.
 templ ActivityGrid(p ActivityGridProps) {
 	{{
@@ -129,27 +132,27 @@ templ ActivityGrid(p ActivityGridProps) {
 	}}
 	<div>
 		<div
-			class="grid gap-0.5"
-			style={ "grid-template-columns: repeat(" + itoa(cols) + ", minmax(0,1fr));" }
+			class="grid gap-1"
+			style={ "grid-template-columns: repeat(" + strconv.Itoa(cols) + ", minmax(0,1fr));" }
 			if len(p.Values) == 0 {
-				x-data={ "{ cells: Array.from({length: " + itoa(cols*rows) + "}, () => Math.random()) }" }
+				x-data={ "{ cells: Array.from({length: " + strconv.Itoa(cols*rows) + "}, () => Math.random()) }" }
 			} else {
 				x-data={ "{ cells: " + floatsToJS(p.Values) + " }" }
 			}
 		>
 			<template x-for="(c, i) in cells" :key="i">
 				<div
-					class="aspect-square"
-					:style="`background: color-mix(in oklab, ${c > 0.75 ? 'var(--color-primary)' : c > 0.45 ? 'var(--color-accent)' : c > 0.2 ? 'var(--color-border)' : 'transparent'} ${Math.round(c*100)}%, var(--color-std));`"
+					class="aspect-square rounded-[3px]"
+					:style="`background: color-mix(in oklab, ${c > 0.75 ? 'var(--color-primary)' : c > 0.45 ? 'var(--color-accent)' : c > 0.2 ? 'var(--color-border)' : 'var(--color-muted)'} ${Math.max(12, Math.round(c*100))}%, var(--color-surface));`"
 				></div>
 			</template>
 		</div>
-		<div class="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+		<div class="mt-2 flex items-center gap-1.5 text-xs text-muted">
 			<span>less</span>
-			<span class="w-3 h-3 border border-border"></span>
-			<span class="w-3 h-3 bg-accent/40"></span>
-			<span class="w-3 h-3 bg-accent"></span>
-			<span class="w-3 h-3 bg-primary"></span>
+			<span class="w-3 h-3 rounded-[3px] bg-muted/40"></span>
+			<span class="w-3 h-3 rounded-[3px] bg-accent/40"></span>
+			<span class="w-3 h-3 rounded-[3px] bg-accent"></span>
+			<span class="w-3 h-3 rounded-[3px] bg-primary"></span>
 			<span>more</span>
 		</div>
 	</div>
@@ -165,24 +168,24 @@ type TimelineEvent struct {
 }
 
 templ Timeline(events ...TimelineEvent) {
-	<ol class="relative border-l border-accent/40 pl-5 space-y-4">
+	<ol class="relative border-l-2 border-border pl-6 space-y-5">
 		for _, e := range events {
 			<li class="relative">
 				<span
-					class="absolute -left-[25px] top-1 w-2.5 h-2.5 rounded-full"
-					style={ "background: var(--color-" + nonEmpty(e.Kind, "primary") + "); box-shadow: 0 0 8px var(--color-" + nonEmpty(e.Kind, "primary") + ");" }
+					class="absolute -left-[31px] top-1 w-3 h-3 rounded-full ring-4 ring-surface"
+					style={ "background: var(--color-" + nonEmpty(e.Kind, "primary") + ");" }
 				></span>
-				<div class="font-mono text-[10px] text-accent/70">{ e.Time }</div>
-				<div class="font-bold">{ e.Title }</div>
+				<div class="text-xs text-muted font-medium">{ e.Time }</div>
+				<div class="font-semibold text-foreground">{ e.Title }</div>
 				if e.Body != "" {
-					<div class="text-sm text-muted">{ e.Body }</div>
+					<div class="text-sm text-muted mt-0.5">{ e.Body }</div>
 				}
 			</li>
 		}
 	</ol>
 }
 
-// AvatarProps — round-ish initial-avatar square (clip-btn).
+// AvatarProps — round initial-avatar.
 // Colour drives both background and foreground contrast.
 type AvatarProps struct {
 	Initial string
@@ -195,17 +198,17 @@ type AvatarProps struct {
 func avatarColor(c string) string {
 	switch c {
 	case "accent":
-		return "bg-accent text-accent-fg"
+		return "bg-accent text-accent-foreground"
 	case "success":
-		return "bg-success text-std"
+		return "bg-success text-background"
 	case "warning":
-		return "bg-warning text-std"
+		return "bg-warning text-background"
 	case "error":
-		return "bg-error text-std"
+		return "bg-error text-background"
 	case "muted":
-		return "bg-muted text-std"
+		return "bg-muted text-foreground"
 	}
-	return "bg-primary text-primary-fg"
+	return "bg-primary text-primary-foreground"
 }
 
 func avatarSize(s string) string {
@@ -219,7 +222,7 @@ func avatarSize(s string) string {
 }
 
 templ Avatar(p AvatarProps) {
-	<div class={ "clip-btn grid place-items-center font-black flex-none", avatarColor(p.Color), avatarSize(p.Size) }>
+	<div class={ "rounded-full grid place-items-center font-bold flex-none", avatarColor(p.Color), avatarSize(p.Size) }>
 		{ p.Initial }
 	</div>
 }
@@ -228,12 +231,12 @@ templ Avatar(p AvatarProps) {
 templ AvatarGroup(overflow int, avatars ...AvatarProps) {
 	<div class="flex -space-x-2">
 		for _, a := range avatars {
-			<div class={ "clip-btn grid place-items-center font-black border-2 border-panel flex-none", avatarColor(a.Color), avatarSize(nonEmpty(a.Size, "sm")) }>
+			<div class={ "rounded-full grid place-items-center font-bold ring-2 ring-surface flex-none", avatarColor(a.Color), avatarSize(nonEmpty(a.Size, "sm")) }>
 				{ a.Initial }
 			</div>
 		}
 		if overflow > 0 {
-			<div class="w-8 h-8 clip-btn border-2 border-panel bg-std  text-accent grid place-items-center font-mono text-[10px]">+{ itoa(overflow) }</div>
+			<div class="w-8 h-8 rounded-full ring-2 ring-surface bg-muted text-foreground grid place-items-center text-xs font-semibold">+{ strconv.Itoa(overflow) }</div>
 		}
 	</div>
 }
@@ -247,19 +250,22 @@ type EmptyStateProps struct {
 }
 
 templ EmptyState(p EmptyStateProps) {
-	<div class="neon-border clip-panel p-6 text-center">
-		<div class="mx-auto w-12 h-12 clip-btn border border-accent text-accent grid place-items-center mb-3">
-			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-				<rect x="3" y="4" width="18" height="16"></rect>
+	<div class="card p-8 text-center">
+		<div class="mx-auto w-14 h-14 rounded-full bg-muted/50 text-muted grid place-items-center mb-4">
+			<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<rect x="3" y="4" width="18" height="16" rx="2"></rect>
 				<path d="M3 10h18M8 4v16"></path>
 			</svg>
 		</div>
-		<div class="glitch neon-primary text-lg font-bold tracking-widest" data-text={ p.Title }>{ p.Title }</div>
+		<div class="text-lg font-semibold text-foreground">{ p.Title }</div>
 		if p.Description != "" {
-			<p class="text-sm text-muted mt-1">{ p.Description }</p>
+			<p class="text-sm text-muted mt-1 max-w-sm mx-auto text-pretty">{ p.Description }</p>
 		}
 		if p.CTALabel != "" && p.CTAHref != "" {
-			<a href={ templ.SafeURL(p.CTAHref) } class="inline-block mt-4 glow-btn clip-btn bg-primary text-primary-fg font-mono text-xs uppercase tracking-widest px-3 py-2">
+			<a
+				href={ templ.SafeURL(p.CTAHref) }
+				class="inline-flex items-center justify-center mt-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium px-4 py-2 transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+			>
 				{ p.CTALabel }
 			</a>
 		}

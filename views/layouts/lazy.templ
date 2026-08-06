@@ -1,0 +1,31 @@
+package layouts
+
+import "github.com/Francesco99975/shorehamex2/views/ui"
+
+templ Lazy(indicatorID string, label string, route string) {
+	<div class="relative">
+		<div
+			hx-get={ route }
+			hx-trigger="intersect once delay:200ms"
+			hx-swap="innerHTML"
+			hx-indicator={ "#" + indicatorID }
+		>
+			{ children... }
+		</div>
+		@ui.FormLoading(indicatorID, label)
+	</div>
+}
+
+templ PreLazy(indicatorID string, label string, route string) {
+	<div class="relative">
+		<div
+			hx-get={ route }
+			hx-trigger="load"
+			hx-swap="outerHTML"
+			hx-indicator={ "#" + indicatorID }
+		>
+			{ children... }
+		</div>
+		@ui.FormLoading(indicatorID, label)
+	</div>
+}

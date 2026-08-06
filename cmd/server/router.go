@@ -164,11 +164,16 @@ Sitemap: %s/sitemap.xml
 	web.GET("/dashboard", controllers.Dashboard(), am.AuthMiddleware())
 
 	web.GET("/tests", controllers.Tests(), am.AuthMiddleware())
-	web.POST("/tests", controllers.UploadTest(), am.AuthMiddleware())
+	web.POST("/tests", controllers.UploadTest(), am.AuthMiddleware(), am.IsDeveloperRoleMiddleware())
+	web.GET("/tests/options", controllers.TestOptions(), am.AuthMiddleware())
+
+	web.GET("/patients", controllers.Patients(), am.AuthMiddleware())
+	web.GET("/assignments", controllers.Assignments(), am.AuthMiddleware())
 
 	web.GET("/settings", controllers.Settings(""), am.AuthMiddleware())
 	web.GET("/settings/profile", controllers.Settings("profile"), am.AuthMiddleware())
 	web.PATCH("/settings/profile/username", controllers.UpdateUsername(), am.AuthMiddleware())
+	web.PATCH("/settings/profile/fullname", controllers.UpdateFullname(), am.AuthMiddleware())
 	web.PATCH("/settings/profile/email", controllers.UpdateEmail(), am.AuthMiddleware())
 	web.GET("/settings/security", controllers.Settings("security"), am.AuthMiddleware())
 	web.DELETE("settings/security/session/:id", controllers.RevokeSession(), am.AuthMiddleware())

@@ -102,6 +102,14 @@ WHERE id = $2
 RETURNING id, role, username, email, full_name, title, is_active, is_email_verified,
          twofa_enabled, last_login, created_at, updated_at;
 
+-- name: UpdateUserFullName :one
+UPDATE users
+SET
+    full_name = $1
+WHERE id = $2
+RETURNING id, role, username, email, full_name, title, is_active, is_email_verified,
+         twofa_enabled, last_login, created_at, updated_at;
+
 -- name: UpdateUserEmail :one
 UPDATE users
 SET

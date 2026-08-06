@@ -73,6 +73,7 @@ func Settings(tab string) echo.HandlerFunc {
 			profileProps := components.ProfileProps{
 				Username:      user.Username,
 				Email:         user.Email,
+				Fullname:      user.FullName,
 				EmailVerified: user.IsEmailVerified,
 				Initials:      strings.Split(user.Username, "")[0],
 				UserID:        user.ID.String(),
@@ -242,6 +243,46 @@ func UpdateUsername() echo.HandlerFunc {
 		}
 
 		tools.SetToastTrigger(c.Response(), enums.SuccessToast, "Successfully updated username")
+		return c.NoContent(http.StatusAccepted)
+	}
+}
+
+func UpdateFullname() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("updating fullname", "UpdateFullname", c.Request().Header.Get("X-Request-ID"))
+		fullname := c.FormValue("fullname")
+
+		if fullname == "" {
+			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("invalid form data"))
+		}
+
+		ctx := c.Request().Context()
+		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusNotFound, fmt.Errorf("unable to get transaction: %v", err))
+		}
+		defer database.HandleTransaction(ctx, tx, &err)
+		repo := repository.New(tx)
+
+		auser, err := auth.GetActiveSession(c.Request(), repo)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to open database on signup: %v", err))
+		}
+		if auser == nil {
+			return c.Redirect(http.StatusSeeOther, "/auth")
+		}
+
+		userUUID, err := uuid.Parse(auser.ID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusNotFound, fmt.Errorf("could not parse ID: %v", err))
+		}
+
+		_, err = repo.UpdateUserFullName(ctx, repository.UpdateUserFullNameParams{FullName: fullname, ID: userUUID})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusNotFound, fmt.Errorf("could not update fullname: %v", err))
+		}
+
+		tools.SetToastTrigger(c.Response(), enums.SuccessToast, "Successfully updated fullname")
 		return c.NoContent(http.StatusAccepted)
 	}
 }
@@ -748,6 +789,8 @@ func CreateUser() echo.HandlerFunc {
 				ID:           id,
 				Username:     payload.Username,
 				Email:        payload.Email,
+				FullName:     payload.FullName,
+				Title:        payload.Title,
 				Role:         payload.Role,
 				PasswordHash: hashedPassword,
 			})

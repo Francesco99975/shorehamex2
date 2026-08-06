@@ -1,0 +1,90 @@
+package components
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+type PatientItemProps struct {
+	MRN              string
+	Initials         string
+	Name             string
+	LastActivity     string
+	AssignmentStatus enums.AssignmentStatus
+	Overdue          bool
+}
+
+func (p *PatientItemProps) StatusClass() ui.BadgeVariant {
+	switch p.AssignmentStatus {
+	case enums.AssignmentStatuses.ASSIGNED:
+		return ui.BadgeMuted
+	case enums.AssignmentStatuses.IN_PROGRESS:
+		return ui.BadgeWarning
+	case enums.AssignmentStatuses.READY_FOR_REVIEW:
+		return ui.BadgeInfo
+	case enums.AssignmentStatuses.COMPLETED:
+		return ui.BadgeSuccess
+	default:
+		return ui.BadgeError
+	}
+}
+
+templ PatientItem(patient PatientItemProps) {
+	<div
+		x-data={ "{" + patient.MRN + "patientDetails: false," + patient.MRN + "editPatientModal: false," + patient.MRN + "confirmDeleteModal: false }" }
+		@click={ patient.MRN + "patientDetails = true" }
+		role="button"
+		tabindex="0"
+		@keydown.enter={ patient.MRN + "patientDetails = true" }
+		class="bg-panel border border-border rounded-xl p-4 cursor-pointer transition hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+	>
+		<div class="flex items-center gap-3">
+			<div class="w-9 h-9 shrink-0 rounded-full bg-accent text-accent-fg grid place-content-center text-xs font-semibold">{ patient.Initials }</div>
+			<div class="min-w-0 flex-1">
+				<p class="font-medium truncate">{ patient.Name }</p>
+				<p class="text-xs text-muted">Last activity · <span>{ patient.LastActivity }</span></p>
+			</div>
+			<div class="flex items-center gap-1 shrink-0">
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonMD,
+					Attrs:   templ.Attributes{"@click": patient.MRN + "editPatientModal = true"},
+				}) {
+					@icons.Edit("w-5 h-5")
+					<span class="font-semibold hidden md:inline">Edit Patient</span>
+				}
+				@ui.Modal(ui.ModalProps{
+					Title:    "Edit Patient",
+					OpenExpr: patient.MRN + "editPatientModal",
+					MaxW:     "350px",
+				}) {
+				}
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonDanger,
+					Size:    ui.ButtonMD,
+					Attrs:   templ.Attributes{"@click": patient.MRN + "confirmDeleteModal = true"},
+				}) {
+					@icons.Trash("w-5 h-5")
+					<span class="font-semibold hidden md:inline">Delete Patient</span>
+				}
+				@ui.Modal(ui.ModalProps{
+					Title:    "Delete Patient",
+					OpenExpr: patient.MRN + "confirmDeleteModal",
+					MaxW:     "350px",
+				}) {
+				}
+			</div>
+		</div>
+		<div class="flex items-center gap-1.5 flex-wrap mt-3">
+			@ui.Badge("", false) {
+				{ patient.AssignmentStatus }
+			}
+			if patient.Overdue {
+				@ui.Badge(ui.BadgeError, true) {
+					Overdue
+				}
+			}
+		</div>
+	</div>
+}

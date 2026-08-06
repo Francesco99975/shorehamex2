@@ -2,12 +2,12 @@ package controllers
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/Francesco99975/shorehamex2/internal/auth"
 	"github.com/Francesco99975/shorehamex2/internal/config"
@@ -113,7 +113,7 @@ func UploadTest() echo.HandlerFunc {
 
 		var testDefinition models.TestDefinition
 		if err := json.Unmarshal(data, &testDefinition); err != nil {
-			return herr.Handle(c.Response(), http.StatusBadRequest, errors.New("invalid test definition"))
+			return herr.Handle(c.Response(), http.StatusBadRequest, err)
 		}
 
 		savePath := "data/tests"
@@ -182,5 +182,34 @@ func UploadTest() echo.HandlerFunc {
 
 		return c.Blob(http.StatusOK, "text/html", html)
 
+	}
+}
+
+func TestOptions() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("listing test options", "TestOptions", c.Request().Header.Get("X-Request-ID"))
+		repo := repository.New(database.Pool())
+
+		tests, err := repo.ListTestDefinitions(c.Request().Context(), repository.ListTestDefinitionsParams{
+			ActiveOnly: nil,
+			Domain:     nil,
+			RowOffset:  0,
+			RowLimit:   50,
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		instruments := helpers.MapSlice(tests, func(test *repository.ListTestDefinitionsRow) components.Instrument {
+			return components.Instrument{
+				Code:     test.Code,
+				Name:     test.Name,
+				Duration: strconv.Itoa(int(test.TypicalDurationMinutes)) + " min.",
+			}
+		})
+
+		html := helpers.MustRenderHTML(components.Instruments(instruments))
+
+		return c.Blob(http.StatusOK, "text/html", html)
 	}
 }

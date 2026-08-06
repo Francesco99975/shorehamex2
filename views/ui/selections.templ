@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/Francesco99975/shorehamex2/views/icons"
+
 // CheckboxProps — single boolean field rendered as a rounded checkbox.
 type CheckboxProps struct {
 	Name     string
@@ -31,8 +33,10 @@ templ Checkbox(p CheckboxProps) {
 
 // RadioOption is one choice inside a @RadioGroup.
 type RadioOption struct {
-	Value string
-	Label string
+	Value   string
+	Label   string
+	Warning string
+	Icon    *templ.Component
 }
 
 // RadioGroup renders a labelled vertical radio list.
@@ -56,6 +60,58 @@ templ RadioGroup(name, initial, label string, opts ...RadioOption) {
 			}
 		</div>
 	</fieldset>
+}
+
+templ RadioGroupTiles(name, initial, label string, showValues bool, opts ...RadioOption) {
+	<div x-data={ "{ selected: '" + initial + "' }" }>
+		<fieldset>
+			if label != "" {
+				<legend class="text-sm font-medium text-fg mb-2">{ label }</legend>
+			}
+			<div class="mt-1.5 grid grid-cols-2 gap-2">
+				for _, o := range opts {
+					<label
+						class={
+							"text-left p-3 rounded-lg border transition cursor-pointer",
+							"border-border hover:bg-std",
+							"has-[:checked]:border-primary has-[:checked]:bg-std",
+						}
+					>
+						<input
+							type="radio"
+							name={ name }
+							value={ o.Value }
+							checked?={ o.Value == initial }
+							class="sr-only"
+							@change={ "selected = '" + o.Value + "'" }
+						/>
+						<p class="text-sm font-semibold flex items-center gap-2">
+							if o.Icon != nil {
+								@(*o.Icon)
+							}
+							{ o.Label }
+						</p>
+						if showValues {
+							<p class="text-xs text-muted truncate">{ o.Value }</p>
+						}
+					</label>
+				}
+			</div>
+			for _, o := range opts {
+				if o.Warning != "" {
+					<div
+						x-show={ "selected === '" + o.Value + "'" }
+						x-transition
+						class="mt-2 text-sm text-muted flex items-center gap-2 p-3 rounded-lg bg-std"
+						style="display: none;"
+					>
+						@icons.Info("w-4 h-4 mt-0.5 shrink-0 opacity-70")
+						<span>{ o.Warning }</span>
+					</div>
+				}
+			}
+		</fieldset>
+	</div>
 }
 
 // SwitchProps — on/off toggle styled as a rounded slider.

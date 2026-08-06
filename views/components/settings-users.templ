@@ -109,6 +109,16 @@ templ CreateUserForm(csrf string, viewer enums.Role) {
 					Label:    "Email",
 					Required: true,
 				})
+				@ui.Input(ui.InputProps{
+					Name:     "fullname",
+					Label:    "Full Name",
+					Required: true,
+				})
+				@ui.Input(ui.InputProps{
+					Name:     "title",
+					Label:    "Title",
+					Required: true,
+				})
 				@ui.SecurePasswordInput(ui.PasswordProps{
 					Name:          "password",
 					Label:         "Password",

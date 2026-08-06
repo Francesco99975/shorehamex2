@@ -103,6 +103,7 @@ type ScoringMethod string
 const (
 	ScoringMethodSUMBANDED         ScoringMethod = "SUM_BANDED"
 	ScoringMethodMULTISCALEPROFILE ScoringMethod = "MULTISCALE_PROFILE"
+	ScoringMethodSUBSCALEBANDED    ScoringMethod = "SUBSCALE_BANDED"
 )
 
 func (e *ScoringMethod) Scan(src interface{}) error {
@@ -189,6 +190,9 @@ const (
 	TestDomainANXIETY     TestDomain = "ANXIETY"
 	TestDomainSOMATIC     TestDomain = "SOMATIC"
 	TestDomainPERSONALITY TestDomain = "PERSONALITY"
+	TestDomainSTRESS      TestDomain = "STRESS"
+	TestDomainTRAUMA      TestDomain = "TRAUMA"
+	TestDomainMULTI       TestDomain = "MULTI"
 )
 
 func (e *TestDomain) Scan(src interface{}) error {
@@ -337,6 +341,7 @@ type Patient struct {
 	LastActivityAt  pgtype.Timestamptz `json:"last_activity_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Notes           string             `json:"notes"`
 }
 
 type PendingAuthChallenge struct {

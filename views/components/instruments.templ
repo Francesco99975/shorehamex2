@@ -1,0 +1,20 @@
+package components
+
+import "github.com/Francesco99975/shorehamex2/views/ui"
+import "github.com/Francesco99975/shorehamex2/internal/helpers"
+
+type Instrument struct {
+	Code     string
+	Name     string
+	Duration string
+}
+
+templ Instruments(instruments []Instrument) {
+	if len(instruments) > 0 {
+		@ui.RadioGroupTiles("Instruments", instruments[0].Code, "instruments", true, helpers.MapSlice(instruments, func(i Instrument) ui.RadioOption {
+			return ui.RadioOption{Value: i.Code, Label: i.Name}
+		})...)
+	} else {
+		@EmptyState(true, false, "No instruments available")
+	}
+}

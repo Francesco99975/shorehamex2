@@ -271,6 +271,8 @@ func (r *DisableTwoFARequest) Validate() error {
 type CreateNewUser struct {
 	Username string `form:"username"`
 	Email    string `form:"email"`
+	FullName string `form:"fullname"`
+	Title    string `form:"title"`
 	Password string `form:"password"`
 	Role     string `form:"role"`
 }
@@ -281,6 +283,12 @@ func (r *CreateNewUser) Validate(passwordSecurityLevel int) error {
 	}
 	if r.Email == "" {
 		return errors.New("email is required")
+	}
+	if r.FullName == "" {
+		return errors.New("full name is required")
+	}
+	if r.Title == "" {
+		return errors.New("title is required")
 	}
 	if r.Password == "" {
 		return errors.New("password is required")

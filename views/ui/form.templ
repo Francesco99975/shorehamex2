@@ -9,7 +9,7 @@ import "github.com/Francesco99975/shorehamex2/views/icons"
 func WithLoading(indicatorID string) templ.Attributes {
 	return templ.Attributes{
 		"hx-indicator":    "#" + indicatorID,
-		"hx-disabled-elt": "find input, find select, find textarea, find checkbox, find radio, find button",
+		"hx-disabled-elt": "find input, find select, find textarea, find input[type=checkbox], find input[type=radio], find button",
 	}
 }
 

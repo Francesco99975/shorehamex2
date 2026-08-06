@@ -7,14 +7,14 @@ import (
 )
 
 templ TestItem(test *models.TestDefinitionView) {
-	{{ test.Code = strings.ReplaceAll(test.Code, "-", "") }}
+	{{ cid := strings.ReplaceAll(test.Code, "-", "") }}
 	<div
-		x-data={ "{" + test.Code + "modal: false}" }
-		@click={ test.Code + "modal = true" }
+		x-data={ "{" + cid + "modal: false}" }
+		@click={ cid + "modal = true" }
 		role="button"
 		tabindex="0"
-		@keydown.enter={ test.Code + "modal = true" }
-		@keydown.space.prevent={ test.Code + "modal = true" }
+		@keydown.enter={ cid + "modal = true" }
+		@keydown.space.prevent={ cid + "modal = true" }
 		class="group bg-panel border border-border rounded-xl p-5 flex flex-col cursor-pointer transition hover:border-primary/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 	>
 		<div class="flex items-start justify-between">
@@ -31,12 +31,12 @@ templ TestItem(test *models.TestDefinitionView) {
 			<div class="p-2 rounded-lg bg-std"><p class="font-semibold text-sm">{ test.AssignmentCount }</p><p class="text-xs text-muted">assigned</p></div>
 		</div>
 		<div class="mt-4 flex items-center gap-2">
-			<button @click.stop={ test.Code + "modal = true" } class="flex-1 py-2 rounded-lg border border-border text-sm font-medium hover:bg-std">View details</button>
-			<button class="flex-1 py-2 rounded-lg bg-primary text-primary-fg text-sm font-medium hover:opacity-90">Assign this test</button>
+			<button @click.stop={ cid + "modal = true" } class="flex-1 py-2 rounded-lg border border-border text-sm font-medium hover:bg-std">View details</button>
+			// <button @click.stop="assignTestModal = true" class="flex-1 py-2 rounded-lg bg-primary text-primary-fg text-sm font-medium hover:opacity-90">Assign this test</button>
 		</div>
 		@ui.Modal(ui.ModalProps{
 			Title:    test.Code,
-			OpenExpr: test.Code + "modal",
+			OpenExpr: cid + "modal",
 			Subtitle: test.Name,
 			MaxW:     "640px",
 		}) {

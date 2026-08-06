@@ -2,14 +2,16 @@ package layouts
 
 import (
 	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/internal/repository"
 	"github.com/Francesco99975/shorehamex2/views/components"
 	"github.com/Francesco99975/shorehamex2/views/icons"
 	"github.com/Francesco99975/shorehamex2/views/ui"
+	"time"
 )
 
 templ AuthenticatedLayout(site config.Site) {
 	@CoreHTML(site) {
-		<div class="min-h-screen flex">
+		<div class="min-h-screen flex" x-data="{ assignTestModal: false, selectedTest: '', selectedPatient: '' }">
 			@components.AsideAdminNav(site)
 			<div class="flex-1 flex flex-col min-w-0">
 				<!-- Topbar -->
@@ -26,10 +28,79 @@ templ AuthenticatedLayout(site config.Site) {
 						<h1 class="text-lg font-semibold capitalize">{ site.Title }</h1>
 					</div>
 					<div class="ml-auto flex items-center gap-2">
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonPrimary,
+							Size:    ui.ButtonMD,
+							Attrs:   templ.Attributes{"@click": "assignTestModal = true"},
+						}) {
+							@icons.PlusIcon("w-5 h-5")
+							<span class="font-semibold hidden md:inline">Assign Test</span>
+						}
 						@ui.ThemeToggle()
 					</div>
 				</header>
 				{ children... }
+				@ui.Modal(ui.ModalProps{
+					Title:    "Assign Test",
+					OpenExpr: "assignTestModal",
+					MaxW:     "350px",
+				}) {
+					<form
+						hx-post="/assign"
+						hx-swap="none"
+						{ ui.WithLoading("assign-test-loading")... }
+						@htmx:after-request="if(event.detail.successful) assignTestModal = false"
+						class="p-4 space-y-4"
+					>
+						@ui.Search(ui.SearchProps{
+							Name:        "patient",
+							Placeholder: "Search patient…",
+							Label:       "Patient",
+							GetURL:      "/search/patients",
+							DebounceMS:  300,
+							TargetID:    "patient-results",
+						})
+						@PreLazy("instruments-loading", "Instruments Loading...", "/tests/options") {
+							@ui.EmptyState(ui.EmptyStateProps{
+								Title:       "No instruments found",
+								Description: "No instruments found. Please add some to continue.",
+							})
+						}
+						@ui.RadioGroupTiles(
+							"mode",
+							string(repository.AssignmentModeINCLINIC),
+							"Administration mode",
+							false,
+							ui.RadioOption{Value: string(repository.AssignmentModeINCLINIC), Label: "In-clinic", Icon: new(icons.Building("w-4 h-4"))},
+							ui.RadioOption{
+								Value:   string(repository.AssignmentModeREMOTE),
+								Label:   "Remote link",
+								Warning: "A secure, single-use link will be emailed to the patient. Expires in 7 days.",
+								Icon:    new(icons.Link("w-4 h-4")),
+							},
+						)
+						@ui.SimpleDatePicker("due_date", "Due Date", time.Now(), time.Now(), time.Now().Add(7*24*time.Hour))
+						<div class="flex gap-2 mt-6">
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonGhost,
+								Size:    ui.ButtonLG,
+								Attrs:   templ.Attributes{"@click": "assignTestModal = false"},
+								FullW:   true,
+							}) {
+								Cancel
+							}
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonPrimary,
+								Type:    ui.TypeSubmit,
+								Size:    ui.ButtonLG,
+								Loading: ui.LoadingConfig{IndicatorID: "assign-test-loading"},
+								FullW:   true,
+							}) {
+								Start Assessment
+							}
+						</div>
+					</form>
+				}
 			</div>
 		</div>
 	}

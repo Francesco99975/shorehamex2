@@ -1,7 +1,10 @@
 package ui
 
-import "strconv"
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
 
 templ StringInput(id string, typology string, label string, required bool) {
 	<div class="flex flex-col w-full gap-1.5 py-2">
@@ -471,5 +474,43 @@ if step == 0 {
 			>+</button>
 		</div>
 		{ children... }
+	</div>
+}
+
+templ SimpleDatePicker(name string, label string, start time.Time, min time.Time, max time.Time) {
+	<div
+		x-data={ `{
+			value: '` + start.Format("2006-01-02") + `',
+			display() {
+				if (!this.value) return 'Select a date';
+				const d = new Date(this.value + 'T00:00:00');
+				return d.toLocaleDateString(undefined, {
+					weekday: 'short',
+					year: 'numeric',
+					month: 'long',
+					day: 'numeric'
+				});
+			}
+		}` }
+	>
+		<label class="text-sm font-medium" for={ name }>{ label }</label>
+		<!-- Visible human-readable field (triggers the real date input) -->
+		<button
+			type="button"
+			class="field mt-1.5 text-left w-full"
+			@click={ `$refs.dateInput.showPicker()` }
+			x-text="display()"
+		></button>
+		<!-- Real date input (can be visually hidden) -->
+		<input
+			x-ref="dateInput"
+			type="date"
+			name={ name }
+			id={ name }
+			class="sr-only"
+			x-model="value"
+			min={ min.Format("2006-01-02") }
+			max={ max.Format("2006-01-02") }
+		/>
 	</div>
 }

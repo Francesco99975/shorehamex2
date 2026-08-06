@@ -1,0 +1,72 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ Patients(site config.Site) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto" x-data="{ newPatient: false }">
+			<div class="space-y-4">
+				<div class="px-4 sm:px-6 py-4 border-b border-primary/10 flex flex-col sm:flex-row gap-3">
+					<div class="flex-1">
+						@ui.Search(ui.SearchProps{
+							Name:           "search_patinets",
+							GetURL:         "/search/patients",
+							TargetID:       "patients-list",
+							DebounceMS:     300,
+							Placeholder:    "Search patients...",
+							ExternalTarget: true,
+						})
+					</div>
+					@ui.Button(ui.ButtonProps{
+						Size:  ui.ButtonMD,
+						Attrs: templ.Attributes{"@click": "newPatient = true"},
+					}) {
+						<span class="font-semibold">New Patient</span>
+					}
+					@ui.Modal(ui.ModalProps{
+						Title:    "Add a new Patient",
+						OpenExpr: "newPatient",
+						Subtitle: "Register a new patient.",
+						MaxW:     "320px",
+					}) {
+						<form
+							hx-post="/tests"
+							hx-target="#patients-list"
+							hx-swap="afterbegin"
+							{ ui.WithLoading("new-patient-indicator")... }
+							@htmx:after-request="if(event.detail.successful) newPatient = false"
+							class="p-6 space-y-6"
+						>
+							<div class="flex gap-2 mt-6">
+								@ui.Button(ui.ButtonProps{
+									Variant: ui.ButtonGhost,
+									Size:    ui.ButtonLG,
+									Attrs:   templ.Attributes{"@click": "newPatient = false"},
+									FullW:   true,
+								}) {
+									Cancel
+								}
+								@ui.Button(ui.ButtonProps{
+									Variant: ui.ButtonPrimary,
+									Type:    ui.TypeSubmit,
+									Size:    ui.ButtonLG,
+									Loading: ui.LoadingConfig{IndicatorID: "new-patient-indicator"},
+									FullW:   true,
+								}) {
+									Add Patient
+								}
+							</div>
+						</form>
+					}
+				</div>
+				<div id="patients-list" class="space-y-3">
+					// Patients list
+				</div>
+			</div>
+		</main>
+	}
+}

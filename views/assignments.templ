@@ -1,0 +1,12 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+)
+
+templ Assignments(site config.Site) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">Assignments</main>
+	}
+}

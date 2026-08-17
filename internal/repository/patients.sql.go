@@ -45,7 +45,7 @@ type CreatePatientParams struct {
 	Phone       *string     `json:"phone"`
 	DateOfBirth pgtype.Date `json:"date_of_birth"`
 	Sex         *Sex        `json:"sex"`
-	CreatedBy   pgtype.UUID `json:"created_by"`
+	CreatedBy   *uuid.UUID  `json:"created_by"`
 }
 
 // is_developer_data is NOT a column here — it's stamped automatically
@@ -87,12 +87,12 @@ func (q *Queries) CreatePatient(ctx context.Context, arg CreatePatientParams) (*
 
 const deletePatient = `-- name: DeletePatient :exec
 DELETE FROM patients
-WHERE id = $1
+WHERE mrn = $1
   AND is_developer_data = is_developer_user($2)
 `
 
 type DeletePatientParams struct {
-	ID       uuid.UUID `json:"id"`
+	Mrn      string    `json:"mrn"`
 	ViewerID uuid.UUID `json:"viewer_id"`
 }
 
@@ -104,7 +104,7 @@ type DeletePatientParams struct {
 // header comment if real, permanent removal of clinical records isn't
 // actually the intended behavior for the ADMIN/USER side of this.
 func (q *Queries) DeletePatient(ctx context.Context, arg DeletePatientParams) error {
-	_, err := q.db.Exec(ctx, deletePatient, arg.ID, arg.ViewerID)
+	_, err := q.db.Exec(ctx, deletePatient, arg.Mrn, arg.ViewerID)
 	return err
 }
 
@@ -326,23 +326,31 @@ func (q *Queries) ListPatientsByStatus(ctx context.Context, arg ListPatientsBySt
 const searchPatients = `-- name: SearchPatients :many
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user($1)
-  AND (full_name ILIKE '%' || $2 || '%' OR mrn ILIKE '%' || $2 || '%')
+AND is_developer_data = is_developer_user($1)
+AND (full_name ILIKE '%' || $2 || '%' OR mrn ILIKE '%' || $2 || '%')
 ORDER BY full_name
-LIMIT $3
+LIMIT $4
+OFFSET ($3 - 1) * $4
 `
 
 type SearchPatientsParams struct {
-	ViewerID uuid.UUID `json:"viewer_id"`
-	Query    *string   `json:"query"`
-	RowLimit int32     `json:"row_limit"`
+	ViewerID uuid.UUID   `json:"viewer_id"`
+	Query    *string     `json:"query"`
+	Page     interface{} `json:"page"`
+	RowLimit int32       `json:"row_limit"`
 }
 
 // Matches the mockup's client-side search (name or id substring match),
 // server-side. Uses the full_name trigram index; also matches on mrn
 // for "type in the chart number" lookups.
+// Supports pagination via page (1-based) and limit (items per page).
 func (q *Queries) SearchPatients(ctx context.Context, arg SearchPatientsParams) ([]*Patient, error) {
-	rows, err := q.db.Query(ctx, searchPatients, arg.ViewerID, arg.Query, arg.RowLimit)
+	rows, err := q.db.Query(ctx, searchPatients,
+		arg.ViewerID,
+		arg.Query,
+		arg.Page,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -423,13 +431,13 @@ SET
     phone = $4,
     date_of_birth = $5,
     sex = $6
-WHERE id = $1
+WHERE mrn = $1
   AND is_developer_data = is_developer_user($7)
 RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
 type UpdatePatientDetailsParams struct {
-	ID          uuid.UUID   `json:"id"`
+	Mrn         string      `json:"mrn"`
 	FullName    string      `json:"full_name"`
 	Email       *string     `json:"email"`
 	Phone       *string     `json:"phone"`
@@ -440,7 +448,7 @@ type UpdatePatientDetailsParams struct {
 
 func (q *Queries) UpdatePatientDetails(ctx context.Context, arg UpdatePatientDetailsParams) (*Patient, error) {
 	row := q.db.QueryRow(ctx, updatePatientDetails,
-		arg.ID,
+		arg.Mrn,
 		arg.FullName,
 		arg.Email,
 		arg.Phone,

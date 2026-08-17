@@ -233,9 +233,9 @@ func (ns NullTestDomain) Value() (driver.Value, error) {
 type ActivityEvent struct {
 	ID              uuid.UUID          `json:"id"`
 	EventType       string             `json:"event_type"`
-	PatientID       pgtype.UUID        `json:"patient_id"`
-	AssignmentID    pgtype.UUID        `json:"assignment_id"`
-	ActorID         pgtype.UUID        `json:"actor_id"`
+	PatientID       *uuid.UUID         `json:"patient_id"`
+	AssignmentID    *uuid.UUID         `json:"assignment_id"`
+	ActorID         *uuid.UUID         `json:"actor_id"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -247,12 +247,12 @@ type Assignment struct {
 	TestCode        string             `json:"test_code"`
 	Mode            AssignmentMode     `json:"mode"`
 	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      pgtype.UUID        `json:"assigned_by"`
+	AssignedBy      *uuid.UUID         `json:"assigned_by"`
 	DueAt           pgtype.Timestamptz `json:"due_at"`
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
@@ -269,7 +269,7 @@ type AssignmentMmpiIndication struct {
 type AssignmentMmpiScale struct {
 	ID                 uuid.UUID      `json:"id"`
 	AssignmentResultID uuid.UUID      `json:"assignment_result_id"`
-	ParentScaleID      pgtype.UUID    `json:"parent_scale_id"`
+	ParentScaleID      *uuid.UUID     `json:"parent_scale_id"`
 	CategoryTitle      string         `json:"category_title"`
 	ScaleCode          *string        `json:"scale_code"`
 	ScaleName          string         `json:"scale_name"`
@@ -283,7 +283,7 @@ type AssignmentMmpiScale struct {
 type AssignmentReminder struct {
 	ID           uuid.UUID          `json:"id"`
 	AssignmentID uuid.UUID          `json:"assignment_id"`
-	SentBy       pgtype.UUID        `json:"sent_by"`
+	SentBy       *uuid.UUID         `json:"sent_by"`
 	SentAt       pgtype.Timestamptz `json:"sent_at"`
 }
 
@@ -334,7 +334,7 @@ type Patient struct {
 	Phone           *string            `json:"phone"`
 	DateOfBirth     pgtype.Date        `json:"date_of_birth"`
 	Sex             *Sex               `json:"sex"`
-	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedBy       *uuid.UUID         `json:"created_by"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	IsActive        bool               `json:"is_active"`
 	ComputedStatus  *AssignmentStatus  `json:"computed_status"`

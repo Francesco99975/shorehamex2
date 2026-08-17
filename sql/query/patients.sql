@@ -65,12 +65,14 @@ LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 -- Matches the mockup's client-side search (name or id substring match),
 -- server-side. Uses the full_name trigram index; also matches on mrn
 -- for "type in the chart number" lookups.
+-- Supports pagination via page (1-based) and limit (items per page).
 SELECT * FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
-  AND (full_name ILIKE '%' || sqlc.arg(query) || '%' OR mrn ILIKE '%' || sqlc.arg(query) || '%')
+AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+AND (full_name ILIKE '%' || sqlc.arg(query) || '%' OR mrn ILIKE '%' || sqlc.arg(query) || '%')
 ORDER BY full_name
-LIMIT sqlc.arg(row_limit);
+LIMIT sqlc.arg(row_limit)
+OFFSET (sqlc.arg(page) - 1) * sqlc.arg(row_limit);
 
 -- name: CountActivePatients :one
 -- Backs a dashboard "Active patients" stat. For a developer viewer,
@@ -101,7 +103,7 @@ SET
     phone = $4,
     date_of_birth = $5,
     sex = $6
-WHERE id = $1
+WHERE mrn = $1
   AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
 RETURNING *;
 
@@ -122,5 +124,5 @@ RETURNING *;
 -- header comment if real, permanent removal of clinical records isn't
 -- actually the intended behavior for the ADMIN/USER side of this.
 DELETE FROM patients
-WHERE id = $1
+WHERE mrn = $1
   AND is_developer_data = is_developer_user(sqlc.arg(viewer_id));

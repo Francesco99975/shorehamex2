@@ -9,6 +9,7 @@ import (
 	"github.com/Francesco99975/shorehamex2/internal/database"
 	"github.com/Francesco99975/shorehamex2/internal/helpers"
 	"github.com/Francesco99975/shorehamex2/internal/httperr"
+	"github.com/Francesco99975/shorehamex2/internal/models"
 	"github.com/Francesco99975/shorehamex2/internal/repository"
 	"github.com/Francesco99975/shorehamex2/views"
 	"github.com/google/uuid"
@@ -45,6 +46,22 @@ func Assignments() echo.HandlerFunc {
 		html := helpers.MustRenderHTML(views.Assignments(data))
 
 		return c.Blob(http.StatusOK, "text/html", html)
+
+	}
+}
+
+func Assign() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("assigning tests", "Assign", c.Request().Header.Get("X-Request-ID"))
+
+		var payload models.AssignPayload
+		if err := c.Bind(&payload); err != nil {
+			return herr.HandleEchoPage(http.StatusBadRequest, err)
+		}
+
+		slog.Debug("Assign payload", slog.Any("payload", payload))
+
+		return c.NoContent(http.StatusAccepted)
 
 	}
 }

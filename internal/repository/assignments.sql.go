@@ -26,8 +26,8 @@ RETURNING a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.du
 `
 
 type CompleteAssignmentReviewParams struct {
-	ID         uuid.UUID   `json:"id"`
-	ReviewerID pgtype.UUID `json:"reviewer_id"`
+	ID         uuid.UUID  `json:"id"`
+	ReviewerID *uuid.UUID `json:"reviewer_id"`
 }
 
 // A clinician confirming the review — reviewer_id doubles as both
@@ -142,7 +142,7 @@ type CreateAssignmentParams struct {
 	PatientID  uuid.UUID          `json:"patient_id"`
 	TestCode   string             `json:"test_code"`
 	Mode       AssignmentMode     `json:"mode"`
-	AssignedBy pgtype.UUID        `json:"assigned_by"`
+	AssignedBy *uuid.UUID         `json:"assigned_by"`
 	DueAt      pgtype.Timestamptz `json:"due_at"`
 }
 
@@ -322,12 +322,12 @@ type ListAssignmentsAwaitingReviewRow struct {
 	TestCode        string             `json:"test_code"`
 	Mode            AssignmentMode     `json:"mode"`
 	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      pgtype.UUID        `json:"assigned_by"`
+	AssignedBy      *uuid.UUID         `json:"assigned_by"`
 	DueAt           pgtype.Timestamptz `json:"due_at"`
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
@@ -399,12 +399,12 @@ type ListAssignmentsForPatientRow struct {
 	TestCode          string             `json:"test_code"`
 	Mode              AssignmentMode     `json:"mode"`
 	Status            AssignmentStatus   `json:"status"`
-	AssignedBy        pgtype.UUID        `json:"assigned_by"`
+	AssignedBy        *uuid.UUID         `json:"assigned_by"`
 	DueAt             pgtype.Timestamptz `json:"due_at"`
 	StartedAt         pgtype.Timestamptz `json:"started_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy        *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData   bool               `json:"is_developer_data"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
@@ -475,12 +475,12 @@ type ListAssignmentsForPatientByStatusRow struct {
 	TestCode          string             `json:"test_code"`
 	Mode              AssignmentMode     `json:"mode"`
 	Status            AssignmentStatus   `json:"status"`
-	AssignedBy        pgtype.UUID        `json:"assigned_by"`
+	AssignedBy        *uuid.UUID         `json:"assigned_by"`
 	DueAt             pgtype.Timestamptz `json:"due_at"`
 	StartedAt         pgtype.Timestamptz `json:"started_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy        *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData   bool               `json:"is_developer_data"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
@@ -553,12 +553,12 @@ type ListOverdueAssignmentsRow struct {
 	TestCode        string             `json:"test_code"`
 	Mode            AssignmentMode     `json:"mode"`
 	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      pgtype.UUID        `json:"assigned_by"`
+	AssignedBy      *uuid.UUID         `json:"assigned_by"`
 	DueAt           pgtype.Timestamptz `json:"due_at"`
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
@@ -629,12 +629,12 @@ type ListOverdueAssignmentsForPatientRow struct {
 	TestCode        string             `json:"test_code"`
 	Mode            AssignmentMode     `json:"mode"`
 	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      pgtype.UUID        `json:"assigned_by"`
+	AssignedBy      *uuid.UUID         `json:"assigned_by"`
 	DueAt           pgtype.Timestamptz `json:"due_at"`
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`

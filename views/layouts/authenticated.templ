@@ -46,7 +46,7 @@ templ AuthenticatedLayout(site config.Site) {
 					MaxW:     "350px",
 				}) {
 					<form
-						hx-post="/assign"
+						hx-post="/assignments"
 						hx-swap="none"
 						{ ui.WithLoading("assign-test-loading")... }
 						@htmx:after-request="if(event.detail.successful) assignTestModal = false"

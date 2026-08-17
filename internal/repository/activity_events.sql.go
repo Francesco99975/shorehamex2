@@ -24,16 +24,16 @@ ORDER BY e.created_at DESC
 `
 
 type ListActivityForAssignmentParams struct {
-	AssignmentID pgtype.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID   `json:"viewer_id"`
+	AssignmentID *uuid.UUID `json:"assignment_id"`
+	ViewerID     uuid.UUID  `json:"viewer_id"`
 }
 
 type ListActivityForAssignmentRow struct {
 	ID              uuid.UUID          `json:"id"`
 	EventType       string             `json:"event_type"`
-	PatientID       pgtype.UUID        `json:"patient_id"`
-	AssignmentID    pgtype.UUID        `json:"assignment_id"`
-	ActorID         pgtype.UUID        `json:"actor_id"`
+	PatientID       *uuid.UUID         `json:"patient_id"`
+	AssignmentID    *uuid.UUID         `json:"assignment_id"`
+	ActorID         *uuid.UUID         `json:"actor_id"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -85,18 +85,18 @@ LIMIT $4 OFFSET $3
 `
 
 type ListActivityForPatientParams struct {
-	PatientID pgtype.UUID `json:"patient_id"`
-	ViewerID  uuid.UUID   `json:"viewer_id"`
-	RowOffset int32       `json:"row_offset"`
-	RowLimit  int32       `json:"row_limit"`
+	PatientID *uuid.UUID `json:"patient_id"`
+	ViewerID  uuid.UUID  `json:"viewer_id"`
+	RowOffset int32      `json:"row_offset"`
+	RowLimit  int32      `json:"row_limit"`
 }
 
 type ListActivityForPatientRow struct {
 	ID              uuid.UUID          `json:"id"`
 	EventType       string             `json:"event_type"`
-	PatientID       pgtype.UUID        `json:"patient_id"`
-	AssignmentID    pgtype.UUID        `json:"assignment_id"`
-	ActorID         pgtype.UUID        `json:"actor_id"`
+	PatientID       *uuid.UUID         `json:"patient_id"`
+	AssignmentID    *uuid.UUID         `json:"assignment_id"`
+	ActorID         *uuid.UUID         `json:"actor_id"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -161,9 +161,9 @@ type ListRecentActivityParams struct {
 type ListRecentActivityRow struct {
 	ID              uuid.UUID          `json:"id"`
 	EventType       string             `json:"event_type"`
-	PatientID       pgtype.UUID        `json:"patient_id"`
-	AssignmentID    pgtype.UUID        `json:"assignment_id"`
-	ActorID         pgtype.UUID        `json:"actor_id"`
+	PatientID       *uuid.UUID         `json:"patient_id"`
+	AssignmentID    *uuid.UUID         `json:"assignment_id"`
+	ActorID         *uuid.UUID         `json:"actor_id"`
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`

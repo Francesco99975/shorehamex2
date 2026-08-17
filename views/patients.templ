@@ -1,24 +1,29 @@
 package views
 
 import (
+	"github.com/Francesco99975/shorehamex2/cmd/boot"
 	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/components"
 	"github.com/Francesco99975/shorehamex2/views/layouts"
 	"github.com/Francesco99975/shorehamex2/views/ui"
+	"strconv"
 )
 
-templ Patients(site config.Site) {
+templ Patients(site config.Site, patients []components.PatientItemProps, total int) {
 	@layouts.AuthenticatedLayout(site) {
 		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto" x-data="{ newPatient: false }">
 			<div class="space-y-4">
 				<div class="px-4 sm:px-6 py-4 border-b border-primary/10 flex flex-col sm:flex-row gap-3">
 					<div class="flex-1">
 						@ui.Search(ui.SearchProps{
-							Name:           "search_patinets",
-							GetURL:         "/search/patients",
+							Name:           "search_patients",
+							GetURL:         "patients/search",
 							TargetID:       "patients-list",
 							DebounceMS:     300,
 							Placeholder:    "Search patients...",
 							ExternalTarget: true,
+							Include:        "[name='page']",
 						})
 					</div>
 					@ui.Button(ui.ButtonProps{
@@ -34,13 +39,45 @@ templ Patients(site config.Site) {
 						MaxW:     "320px",
 					}) {
 						<form
-							hx-post="/tests"
+							hx-post="/patients"
 							hx-target="#patients-list"
 							hx-swap="afterbegin"
 							{ ui.WithLoading("new-patient-indicator")... }
 							@htmx:after-request="if(event.detail.successful) newPatient = false"
 							class="p-6 space-y-6"
 						>
+							@components.CSRF(site.CSRF)
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								@ui.Input(ui.InputProps{
+									Name:     "fullname",
+									Label:    "Full Name *",
+									Required: true,
+								})
+								@ui.Input(ui.InputProps{
+									Name:     "email",
+									Type:     "email",
+									Label:    "Email *",
+									Required: true,
+								})
+								@ui.PhoneInput(ui.PhoneInputProps{
+									Name:     "phone",
+									Label:    "Phone *",
+									Required: true,
+								})
+								@ui.DateOfBirth(ui.DateOfBirthProps{
+									Name:     "dob",
+									Label:    "Date of birth *",
+									Hint:     "Day / Month / Year",
+									MaxAge:   120,
+									Required: true,
+								})
+								@ui.Droplist(ui.DroplistProps{
+									Name: "sex", Label: "Sex *",
+									Required: true,
+									Selected: enums.Sexes.MALE.String(),
+									Opts:     []ui.DropOption{{Value: enums.Sexes.MALE.String(), Label: enums.Sexes.MALE.String()}, {Value: enums.Sexes.FEMALE.String(), Label: enums.Sexes.FEMALE.String()}},
+								})
+							</div>
 							<div class="flex gap-2 mt-6">
 								@ui.Button(ui.ButtonProps{
 									Variant: ui.ButtonGhost,
@@ -64,9 +101,50 @@ templ Patients(site config.Site) {
 					}
 				</div>
 				<div id="patients-list" class="space-y-3">
-					// Patients list
+					@PatientsList(patients, site.CSRF)
 				</div>
+				@PatientsPagination(total, 1, boot.Environment.PaginationWindow, false)
 			</div>
 		</main>
 	}
+}
+
+templ PatientsList(patients []components.PatientItemProps, csrf string) {
+	for _, patient := range patients {
+		@components.PatientItem(patient, csrf)
+	}
+}
+
+templ PatientsPagination(total int, page int, perPage int, oob bool) {
+	<div
+		id="patients-pagination"
+		if oob {
+			hx-swap-oob="true"
+		}
+		class="px-4 sm:px-6 py-4 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-3"
+	>
+		<p class="text-sm text-primary/60">
+			Showing <span class="font-medium text-primary">{ strconv.Itoa((page-1)*perPage + 1) }-{ strconv.Itoa(min(page*perPage, total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(total) }</span>
+		</p>
+		<div class="flex items-center gap-1">
+			@ui.Pagination(ui.PaginationProps{
+				Current:    page,
+				TotalRows:  total,
+				TotalPages: (total + perPage - 1) / perPage,
+				Window:     perPage,
+				URL:        "patients/search",
+				Target:     "patients-list",
+				Swap:       "innerHTML",
+				Include:    "[name='search_patients']",
+				PushURL:    false,
+			})
+		</div>
+	</div>
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -14,10 +14,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-type UserIDKey string
-
 const (
-	UserKey UserIDKey = "user_id"
+	UserKey string = "user_id"
 )
 
 type AuthMiddlewares struct {

@@ -1,22 +1,27 @@
 package components
 
 import (
+	"fmt"
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/views/icons"
 	"github.com/Francesco99975/shorehamex2/views/ui"
+	"strings"
 )
 
 type PatientItemProps struct {
 	MRN              string
 	Initials         string
 	Name             string
+	Email            string
+	Phone            string
+	DOB              string
+	Sex              enums.Sex
 	LastActivity     string
-	AssignmentStatus enums.AssignmentStatus
-	Overdue          bool
+	AssignmentStatus *enums.AssignmentStatus
 }
 
 func (p *PatientItemProps) StatusClass() ui.BadgeVariant {
-	switch p.AssignmentStatus {
+	switch *p.AssignmentStatus {
 	case enums.AssignmentStatuses.ASSIGNED:
 		return ui.BadgeMuted
 	case enums.AssignmentStatuses.IN_PROGRESS:
@@ -30,59 +35,177 @@ func (p *PatientItemProps) StatusClass() ui.BadgeVariant {
 	}
 }
 
-templ PatientItem(patient PatientItemProps) {
+templ PatientItem(patient PatientItemProps, csrf string) {
+	{{ uiid := strings.ReplaceAll(patient.MRN, "-", "_") }}
 	<div
-		x-data={ "{" + patient.MRN + "patientDetails: false," + patient.MRN + "editPatientModal: false," + patient.MRN + "confirmDeleteModal: false }" }
-		@click={ patient.MRN + "patientDetails = true" }
+		id={ uiid }
+		x-data={ "{" + uiid + "patientDetails: false," + uiid + "editPatientModal: false," + uiid + "confirmDeleteModal: false }" }
+		@click={ uiid + "patientDetails = true" }
 		role="button"
 		tabindex="0"
-		@keydown.enter={ patient.MRN + "patientDetails = true" }
+		@keydown.enter={ uiid + "patientDetails = true" }
 		class="bg-panel border border-border rounded-xl p-4 cursor-pointer transition hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 	>
 		<div class="flex items-center gap-3">
 			<div class="w-9 h-9 shrink-0 rounded-full bg-accent text-accent-fg grid place-content-center text-xs font-semibold">{ patient.Initials }</div>
 			<div class="min-w-0 flex-1">
-				<p class="font-medium truncate">{ patient.Name }</p>
+				<p class="font-medium truncate">{ patient.Name } <span class="text-muted">{ patient.MRN }</span></p>
 				<p class="text-xs text-muted">Last activity · <span>{ patient.LastActivity }</span></p>
 			</div>
 			<div class="flex items-center gap-1 shrink-0">
 				@ui.Button(ui.ButtonProps{
 					Variant: ui.ButtonGhost,
 					Size:    ui.ButtonMD,
-					Attrs:   templ.Attributes{"@click": patient.MRN + "editPatientModal = true"},
+					Attrs:   templ.Attributes{"@click": uiid + "editPatientModal = true"},
 				}) {
 					@icons.Edit("w-5 h-5")
 					<span class="font-semibold hidden md:inline">Edit Patient</span>
 				}
 				@ui.Modal(ui.ModalProps{
 					Title:    "Edit Patient",
-					OpenExpr: patient.MRN + "editPatientModal",
+					OpenExpr: uiid + "editPatientModal",
 					MaxW:     "350px",
 				}) {
+					<form
+						hx-put={ "/patients/" + patient.MRN }
+						hx-target={ "#" + uiid }
+						hx-swap="outerHTML"
+						{ ui.WithLoading("update-patient-indicator")... }
+						@htmx:after-request={ "if(event.detail.successful) " + uiid + "editPatientModal = false" }
+						class="p-6 space-y-6"
+					>
+						@CSRF(csrf)
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							@ui.Input(ui.InputProps{
+								Name:     "fullname",
+								Label:    "Full Name *",
+								Attrs:    templ.Attributes{"value": patient.Name},
+								Required: true,
+							})
+							@ui.Input(ui.InputProps{
+								Name:     "email",
+								Type:     "email",
+								Label:    "Email *",
+								Attrs:    templ.Attributes{"value": patient.Email},
+								Required: true,
+							})
+							@ui.PhoneInput(ui.PhoneInputProps{
+								Name:     "phone",
+								Label:    "Phone *",
+								Value:    patient.Phone,
+								Required: true,
+							})
+							@ui.DateOfBirth(ui.DateOfBirthProps{
+								Name:     "dob",
+								Label:    "Date of birth *",
+								Hint:     "Day / Month / Year",
+								MaxAge:   120,
+								Value:    patient.DOB,
+								Required: true,
+							})
+							@ui.Droplist(ui.DroplistProps{
+								Name: "sex", Label: "Sex *",
+								Required: true,
+								Selected: patient.Sex.String(),
+								Opts:     []ui.DropOption{{Value: enums.Sexes.MALE.String(), Label: enums.Sexes.MALE.String()}, {Value: enums.Sexes.FEMALE.String(), Label: enums.Sexes.FEMALE.String()}},
+							})
+						</div>
+						<div class="flex gap-2 mt-6">
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonGhost,
+								Size:    ui.ButtonLG,
+								Attrs:   templ.Attributes{"@click": "newPatient = false"},
+								FullW:   true,
+							}) {
+								Cancel
+							}
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonPrimary,
+								Type:    ui.TypeSubmit,
+								Size:    ui.ButtonLG,
+								Loading: ui.LoadingConfig{IndicatorID: "update-patient-indicator"},
+								FullW:   true,
+							}) {
+								Update Patient
+							}
+						</div>
+					</form>
 				}
 				@ui.Button(ui.ButtonProps{
 					Variant: ui.ButtonDanger,
 					Size:    ui.ButtonMD,
-					Attrs:   templ.Attributes{"@click": patient.MRN + "confirmDeleteModal = true"},
+					Attrs:   templ.Attributes{"@click": uiid + "confirmDeleteModal = true"},
 				}) {
 					@icons.Trash("w-5 h-5")
 					<span class="font-semibold hidden md:inline">Delete Patient</span>
 				}
 				@ui.Modal(ui.ModalProps{
 					Title:    "Delete Patient",
-					OpenExpr: patient.MRN + "confirmDeleteModal",
+					OpenExpr: uiid + "confirmDeleteModal",
 					MaxW:     "350px",
 				}) {
+					<div x-data={ "{ " + uiid + "idConfirm: '' }" }>
+						<div class="px-6 py-5 space-y-4">
+							<div class="p-4 rounded-lg bg-error/5 border border-error/20">
+								<p class="text-sm text-error font-medium mb-2">Warning: Permanent Deletion</p>
+								<ul class="text-sm text-error/80 space-y-1 list-disc list-inside">
+									<li>All patient data will be deleted</li>
+									<li>Data cannot be recovered</li>
+								</ul>
+							</div>
+							@ui.Input(ui.InputProps{
+								Name:     uiid + "idConfirm",
+								Label:    fmt.Sprintf("To confirm, type the patient ID: (%s)", patient.MRN),
+								Required: true,
+								Danger:   true,
+								Hint:     "Enter the patient ID to confirm",
+								Attrs: templ.Attributes{
+									"x-model": uiid + "idConfirm",
+								},
+							})
+						</div>
+						<div class="px-6 py-4 border-t border-error/20 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonGhost,
+								Size:    ui.ButtonMD,
+								Type:    ui.TypeButton,
+								FullW:   false,
+								Attrs: templ.Attributes{
+									"@click": uiid + "confirmDeleteModal = false;" + uiid + "idConfirm = ''",
+								},
+							}) {
+								<span>Cancel</span>
+							}
+							<form
+								hx-delete={ "/patients/" + patient.MRN }
+								hx-target={ "#" + uiid }
+								hx-swap="outerHTML"
+								{ ui.WithLoading("delete-patient-indicator")... }
+								@htmx:after-request={ "if(event.detail.successful) " + uiid + "confirmDeleteModal = false" }
+							>
+								@CSRF(csrf)
+								@ui.Button(ui.ButtonProps{
+									Variant: ui.ButtonDanger,
+									Size:    ui.ButtonLG,
+									Type:    ui.TypeSubmit,
+									Loading: ui.LoadingConfig{IndicatorID: "delete-patient-indicator"},
+									Attrs: templ.Attributes{
+										":disabled": uiid + "idConfirm !== '" + patient.MRN + "'",
+										":class":    uiid + "idConfirm !== '" + patient.MRN + "' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-error/90'",
+									},
+								}) {
+									<span>Delete Patient</span>
+								}
+							</form>
+						</div>
+					</div>
 				}
 			</div>
 		</div>
 		<div class="flex items-center gap-1.5 flex-wrap mt-3">
-			@ui.Badge("", false) {
-				{ patient.AssignmentStatus }
-			}
-			if patient.Overdue {
-				@ui.Badge(ui.BadgeError, true) {
-					Overdue
+			if patient.AssignmentStatus != nil {
+				@ui.Badge(patient.StatusClass(), false) {
+					{ *patient.AssignmentStatus }
 				}
 			}
 		</div>

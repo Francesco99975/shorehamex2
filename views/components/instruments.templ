@@ -11,8 +11,8 @@ type Instrument struct {
 
 templ Instruments(instruments []Instrument) {
 	if len(instruments) > 0 {
-		@ui.RadioGroupTiles("Instruments", instruments[0].Code, "instruments", true, helpers.MapSlice(instruments, func(i Instrument) ui.RadioOption {
-			return ui.RadioOption{Value: i.Code, Label: i.Name}
+		@ui.CheckboxGroupTiles("Instruments", true, helpers.MapSlice(instruments, func(i Instrument) ui.CheckboxProps {
+			return ui.CheckboxProps{Name: "instruments", Value: i.Code, Label: i.Name}
 		})...)
 	} else {
 		@EmptyState(true, false, "No instruments available")

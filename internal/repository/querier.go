@@ -532,6 +532,7 @@ type Querier interface {
 	// Matches the mockup's client-side search (name or id substring match),
 	// server-side. Uses the full_name trigram index; also matches on mrn
 	// for "type in the chart number" lookups.
+	// Supports pagination via page (1-based) and limit (items per page).
 	SearchPatients(ctx context.Context, arg SearchPatientsParams) ([]*Patient, error)
 	SearchUsers(ctx context.Context, arg SearchUsersParams) ([]*SearchUsersRow, error)
 	// remote_access_tokens.sql

@@ -47,9 +47,9 @@ RETURNING id, assignment_id, sent_by, sent_at
 `
 
 type CreateAssignmentReminderParams struct {
-	ID           uuid.UUID   `json:"id"`
-	SentBy       pgtype.UUID `json:"sent_by"`
-	AssignmentID uuid.UUID   `json:"assignment_id"`
+	ID           uuid.UUID  `json:"id"`
+	SentBy       *uuid.UUID `json:"sent_by"`
+	AssignmentID uuid.UUID  `json:"assignment_id"`
 }
 
 // assignment_reminders.sql
@@ -177,12 +177,12 @@ type ListAssignmentsDueForReminderRow struct {
 	TestCode           string             `json:"test_code"`
 	Mode               AssignmentMode     `json:"mode"`
 	Status             AssignmentStatus   `json:"status"`
-	AssignedBy         pgtype.UUID        `json:"assigned_by"`
+	AssignedBy         *uuid.UUID         `json:"assigned_by"`
 	DueAt              pgtype.Timestamptz `json:"due_at"`
 	StartedAt          pgtype.Timestamptz `json:"started_at"`
 	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy         pgtype.UUID        `json:"reviewed_by"`
+	ReviewedBy         *uuid.UUID         `json:"reviewed_by"`
 	IsDeveloperData    bool               `json:"is_developer_data"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`

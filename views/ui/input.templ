@@ -514,3 +514,996 @@ templ SimpleDatePicker(name string, label string, start time.Time, min time.Time
 		/>
 	</div>
 }
+
+// FracturedAddress is a "fractured" address group: instead of one free-text
+// box, every part of an address gets its own captioned, form-friendly input
+// (street number, street name, unit, city, province/region, postal code,
+// country). It is Canadian-first but can go global.
+//
+// Pure Tailwind + inline Alpine — no <script> tag, no Alpine.data() registration.
+// All logic lives in the fracturedAddrXData object literal below; per-instance
+// config is passed via data-* attributes and read in init().
+//
+// SUBMITTED FIELDS (all prefixed with Name):
+//
+//	{Name}_street_number, {Name}_street_name, {Name}_unit,
+//	{Name}_city, {Name}_region, {Name}_postal, {Name}_country
+//	{Name}_same_as_mailing = "1"   (only when the same-as box is checked)
+//
+// "SAME AS MAILING" SEMANTICS:
+// When SameAsLabel is set a checkbox appears. Checking it collapses the whole
+// field block AND disables it via a native <fieldset :disabled>, so none of the
+// address controls submit (a disabled fieldset skips every descendant control,
+// including the province Droplist's hidden input). The only thing that submits
+// is {Name}_same_as_mailing="1", which lives OUTSIDE the disabled fieldset.
+// Your backend treats that flag as authoritative and copies the mailing address
+// server-side — the correct pattern, since the client should never be trusted
+// to carry the canonical address.
+type FracturedAddressProps struct {
+	Name          string
+	Legend        string       // group caption, e.g. "Mailing address"
+	Hint          string       // small helper line under the legend
+	Country       string       // default ISO code, default "CA"
+	Global        bool         // true => country becomes a selector, region is free text, postal generic
+	Countries     []DropOption // optional country list for Global mode (defaults to commonCountries())
+	Required      bool
+	SameAsLabel   string // if set, renders the "same as …" checkbox with this label
+	SameAsDefault bool   // whether that checkbox starts checked
+	Danger        bool
+	Attrs         templ.Attributes
+}
+
+// fracturedAddrXData is the complete inline Alpine component.
+//   - `same`     mirrors the same-as checkbox (gates the fieldset).
+//   - `country`  drives region label + postal formatting/validation.
+//   - `postal`   is live-formatted for Canada (A1A 1A1) as the user types.
+//
+// Inside a Go raw string, `\d` etc. are literal — exactly what the JS regex
+// needs, so no double-escaping.
+const fracturedAddrXData = `{
+	same:false, country:'CA', postal:'',
+	init(){
+		const d=this.$el.dataset;
+		this.country=d.country||'CA';
+		this.same=d.same==='true';
+		this.postal=d.postal||'';
+	},
+	isCA(){ return this.country === 'CA'; },
+	formatPostal(){
+		if(!this.isCA()){ return; }
+		let v=this.postal.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+		if(v.length>3){ v=v.slice(0,3)+' '+v.slice(3); }
+		this.postal=v;
+	},
+	postalPlaceholder(){ return this.isCA() ? 'A1A 1A1' : 'ZIP / Postal code'; },
+	postalValid(){
+		if(!this.postal){ return true; }
+		if(this.isCA()){ return /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] \d[ABCEGHJ-NPRSTV-Z]\d$/.test(this.postal); }
+		return this.postal.length >= 3;
+	},
+	regionLabel(){ return this.isCA() ? 'Province' : 'State / Province / Region'; }
+}`
+
+// FracturedAddress renders the captioned, reactive address group.
+templ FracturedAddress(p FracturedAddressProps) {
+	{{ country := nonEmpty(p.Country, "CA") }}
+	{{ sameDefault := "false" }}
+	if p.SameAsDefault {
+		{{ sameDefault = "true" }}
+	}
+	{{ countryOpts := p.Countries }}
+	if len(countryOpts) == 0 {
+		{{ countryOpts = commonCountries() }}
+	}
+	<fieldset
+		class="block border-0 p-0 m-0 min-w-0"
+		x-data={ fracturedAddrXData }
+		data-country={ country }
+		data-same={ sameDefault }
+		{ p.Attrs... }
+	>
+		if p.Legend != "" {
+			<legend class="text-sm font-semibold text-fg mb-1 p-0">{ p.Legend }</legend>
+		}
+		if p.Hint != "" {
+			<p class="text-xs text-muted mb-3">{ p.Hint }</p>
+		}
+		<!-- Same-as checkbox. Its hidden flag input lives HERE, outside the
+		     disabled fieldset below, so it always submits when checked. -->
+		if p.SameAsLabel != "" {
+			<label class="flex items-center gap-2.5 cursor-pointer py-1 mb-3">
+				<input type="checkbox" class="check" x-model="same" name={ p.Name + "_same_as_mailing" } value="1" checked?={ p.SameAsDefault }/>
+				<span class="text-sm text-fg">{ p.SameAsLabel }</span>
+			</label>
+		}
+		<!-- Field block: collapsed for UX and disabled for correctness when same. -->
+		<div x-show="!same" x-cloak x-collapse>
+			<fieldset :disabled="same" class="border-0 p-0 m-0 min-w-0 grid grid-cols-6 gap-3">
+				<!-- Street number -->
+				<div class="col-span-6 sm:col-span-2">
+					@subFieldLabel("Street number")
+					<input type="text" inputmode="numeric" name={ p.Name + "_street_number" } required?={ p.Required } placeholder="123" class="field"/>
+				</div>
+				<!-- Street name -->
+				<div class="col-span-6 sm:col-span-4">
+					@subFieldLabel("Street name")
+					<input type="text" name={ p.Name + "_street_name" } required?={ p.Required } placeholder="Main Street W" class="field"/>
+				</div>
+				<!-- Unit / apartment / suite (edge case) -->
+				<div class="col-span-6 sm:col-span-2">
+					@subFieldLabel("Unit / Apt / Suite")
+					<input type="text" name={ p.Name + "_unit" } placeholder="Optional" class="field"/>
+				</div>
+				<!-- City -->
+				<div class="col-span-6 sm:col-span-4">
+					@subFieldLabel("City")
+					<input type="text" name={ p.Name + "_city" } required?={ p.Required } placeholder="Toronto" class="field"/>
+				</div>
+				<!-- Region: Province Droplist in CA mode, free text (dynamic label) globally -->
+				<div class="col-span-6 sm:col-span-3">
+					if p.Global {
+						<span class="block text-xs font-medium text-muted mb-1" x-text="regionLabel()"></span>
+						<input type="text" name={ p.Name + "_region" } class="field"/>
+					} else {
+						@Droplist(DroplistProps{
+							Name:        p.Name + "_region",
+							Label:       "Province",
+							Placeholder: "Select province…",
+							Required:    p.Required,
+							Opts:        canadianProvinces(),
+						})
+					}
+				</div>
+				<!-- Postal / ZIP, live-formatted + validated for Canada -->
+				<div class="col-span-6 sm:col-span-3">
+					<span class="block text-xs font-medium text-muted mb-1" x-text="isCA() ? 'Postal code' : 'ZIP / Postal code'"></span>
+					<input
+						type="text"
+						name={ p.Name + "_postal" }
+						x-model="postal"
+						@input="formatPostal()"
+						:placeholder="postalPlaceholder()"
+						:aria-invalid="!postalValid()"
+						autocapitalize="characters"
+						required?={ p.Required }
+						class="field"
+						:class="!postalValid() && 'ring-2 ring-error/60'"
+					/>
+					<p x-show="!postalValid()" x-cloak class="mt-1 text-xs text-error">Enter a valid postal code (A1A 1A1).</p>
+				</div>
+				<!-- Country: hidden + fixed in CA mode, selectable globally -->
+				if p.Global {
+					<div class="col-span-6 sm:col-span-3">
+						@subFieldLabel("Country")
+						<select name={ p.Name + "_country" } x-model="country" required?={ p.Required } class="field">
+							for _, c := range countryOpts {
+								<option value={ c.Value } selected?={ c.Value == country }>{ c.Label }</option>
+							}
+						</select>
+					</div>
+				} else {
+					<input type="hidden" name={ p.Name + "_country" } value="CA"/>
+				}
+			</fieldset>
+		</div>
+		{ children... }
+	</fieldset>
+}
+
+// canadianProvinces returns the 13 Canadian provinces and territories as
+// DropOptions (2-letter postal abbreviations as values) for the CA-mode
+// province Droplist.
+func canadianProvinces() []DropOption {
+	return []DropOption{
+		{Value: "AB", Label: "Alberta"},
+		{Value: "BC", Label: "British Columbia"},
+		{Value: "MB", Label: "Manitoba"},
+		{Value: "NB", Label: "New Brunswick"},
+		{Value: "NL", Label: "Newfoundland and Labrador"},
+		{Value: "NS", Label: "Nova Scotia"},
+		{Value: "NT", Label: "Northwest Territories"},
+		{Value: "NU", Label: "Nunavut"},
+		{Value: "ON", Label: "Ontario"},
+		{Value: "PE", Label: "Prince Edward Island"},
+		{Value: "QC", Label: "Quebec"},
+		{Value: "SK", Label: "Saskatchewan"},
+		{Value: "YT", Label: "Yukon"},
+	}
+}
+
+// commonCountries is the default country list used in Global mode when the
+// caller doesn't supply their own. ISO 3166-1 alpha-2 codes as values.
+func commonCountries() []DropOption {
+	return []DropOption{
+		{Value: "CA", Label: "Canada"},
+		{Value: "US", Label: "United States"},
+		{Value: "GB", Label: "United Kingdom"},
+		{Value: "IE", Label: "Ireland"},
+		{Value: "AU", Label: "Australia"},
+		{Value: "NZ", Label: "New Zealand"},
+		{Value: "FR", Label: "France"},
+		{Value: "DE", Label: "Germany"},
+		{Value: "ES", Label: "Spain"},
+		{Value: "IT", Label: "Italy"},
+		{Value: "NL", Label: "Netherlands"},
+		{Value: "MX", Label: "Mexico"},
+	}
+}
+
+// AddressProvider names the upstream address/geocoding API that the *backend*
+// proxy should call. It is sent to your SearchURL as a `provider` query param
+// so a single endpoint can fan out to different services. The browser never
+// talks to the third-party API directly and never sees its key.
+type AddressProvider string
+
+const (
+	AddressCanadaPost AddressProvider = "canadapost" // AddressComplete / Canada Post
+	AddressGoogle     AddressProvider = "google"     // Google Places Autocomplete
+	AddressMapbox     AddressProvider = "mapbox"     // Mapbox Search
+	AddressNominatim  AddressProvider = "nominatim"  // OpenStreetMap Nominatim
+	AddressLoqate     AddressProvider = "loqate"     // Loqate
+	AddressSmarty     AddressProvider = "smarty"     // Smarty (US)
+)
+
+// AddressInputProps is the static config for @AddressInput.
+//
+// ARCHITECTURE — why a proxy:
+// API keys for Canada Post, Google, Loqate, etc. are secrets and MUST stay
+// server-side. So this component does NOT call the provider directly. Instead
+// it calls YOUR backend at SearchURL (via an Alpine fetch — still no external
+// <script>), which holds the key, calls the chosen provider, and returns a
+// normalized JSON array. This keeps keys secret, lets you swap providers
+// without touching the UI, adds a spot for caching / rate limiting, and
+// sidesteps CORS.
+//
+// SearchURL contract:
+//
+//	GET {SearchURL}?q=<query>&provider=<Provider>&country=<CountryFilter>
+//	200 -> [ { "id": "..", "label": "full one-line summary",
+//	           "line1": "..", "line2": "..", "city": "..",
+//	           "region": "..", "postal": "..", "country": "CA" }, ... ]
+//
+// `label` is what shows in the dropdown; the structured fields prefill the
+// editable form on selection. Only `label` + `line1` are strictly required in
+// each result. The component always allows fully manual entry too.
+//
+// Submitted fields (all prefixed with Name):
+//
+//	{Name}_line1, {Name}_line2, {Name}_city, {Name}_region,
+//	{Name}_postal, {Name}_country
+type AddressInputProps struct {
+	Name          string
+	Label         string
+	Hint          string
+	Placeholder   string
+	SearchURL     string          // your backend proxy endpoint (required)
+	Provider      AddressProvider // hint forwarded to the proxy
+	CountryFilter string          // optional ISO alpha-2 restriction, e.g. "CA"
+	Required      bool
+	Danger        bool
+	Attrs         templ.Attributes
+}
+
+// addressXData is the complete inline Alpine component — no registration
+// script. Config comes from this.$el.dataset (url / provider / country /
+// required). search() calls YOUR proxy with fetch and guards against
+// out-of-order responses via a sequence counter.
+const addressXData = `{
+	q:'', open:false, loading:false, error:'', expanded:false, results:[], required:false,
+	url:'', provider:'', country:'', _seq:0,
+	addr:{line1:'',line2:'',city:'',region:'',postal:'',country:''},
+	init(){
+		const d=this.$el.dataset;
+		this.url=d.url||''; this.provider=d.provider||''; this.country=d.country||'';
+		this.addr.country=this.country; this.required=d.required==='true';
+	},
+	async search(){
+		this.error=''; const query=this.q.trim();
+		if(query.length<3){ this.results=[]; this.open=false; return; }
+		if(!this.url){ this.error='Address lookup is not configured.'; return; }
+		const seq=++this._seq; this.loading=true;
+		try{
+			const params=new URLSearchParams({q:query});
+			if(this.provider)params.set('provider',this.provider);
+			if(this.country)params.set('country',this.country);
+			const res=await fetch(this.url+'?'+params.toString(),{headers:{'Accept':'application/json'}});
+			if(!res.ok)throw new Error('lookup failed');
+			const data=await res.json();
+			if(seq!==this._seq)return;
+			this.results=Array.isArray(data)?data:(data.results||[]);
+			this.open=this.results.length>0;
+		}catch(e){
+			if(seq!==this._seq)return;
+			this.error='Could not load suggestions. Enter the address manually.';
+			this.results=[]; this.open=false;
+		}finally{
+			if(seq===this._seq)this.loading=false;
+		}
+	},
+	choose(r){
+		this.addr={line1:r.line1||'',line2:r.line2||'',city:r.city||'',region:r.region||'',postal:r.postal||'',country:r.country||this.country||''};
+		this.q=r.label||r.line1||''; this.results=[]; this.open=false; this.expanded=true;
+	}
+}`
+
+// AddressInput renders a labelled address field: a live-autocomplete search
+// box backed by your proxy, plus an editable structured form that appears once
+// a suggestion is picked (or "Enter address manually" is clicked).
+// Self-contained: only Alpine (+ the @alpinejs/collapse plugin, already used
+// elsewhere in baseui for x-collapse) is required on the page.
+templ AddressInput(p AddressInputProps) {
+	{{ph := p.Placeholder
+if ph == "" {
+	ph = "Start typing an address…"
+}
+	}}
+	<div
+		class="block"
+		x-data={ addressXData }
+		data-url={ p.SearchURL }
+		data-provider={ string(p.Provider) }
+		data-country={ p.CountryFilter }
+		data-required={ fmt.Sprintf("%t", p.Required) }
+		@keydown.escape.stop="open = false"
+	>
+		if p.Label != "" {
+			if !p.Danger {
+				@FieldLabel(p.Label, p.Hint)
+			} else {
+				@DangerLabel(p.Label, p.Hint)
+			}
+		}
+		<!-- Autocomplete search -->
+		<div class="relative">
+			<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+			<input
+				type="text"
+				x-model="q"
+				@input.debounce.300ms="search()"
+				@focus="if (results.length) open = true"
+				placeholder={ ph }
+				autocomplete="off"
+				role="combobox"
+				aria-autocomplete="list"
+				:aria-expanded="open"
+				class="field pl-9 pr-9"
+			/>
+			<!-- Loading spinner -->
+			<div class="absolute right-3 top-1/2 -translate-y-1/2">
+				<svg x-show="loading" x-cloak class="w-4 h-4 animate-spin text-muted" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+			</div>
+			<!-- Suggestions -->
+			<ul
+				x-show="open && results.length"
+				x-cloak
+				x-transition:enter="transition ease-out duration-150"
+				x-transition:enter-start="opacity-0 -translate-y-1"
+				x-transition:enter-end="opacity-100 translate-y-0"
+				@click.outside="open = false"
+				role="listbox"
+				class="absolute z-30 mt-2 w-full card shadow-lg p-1.5 max-h-64 overflow-y-auto"
+			>
+				<template x-for="(r, i) in results" :key="r.id || i">
+					<li>
+						<button
+							type="button"
+							role="option"
+							@click="choose(r)"
+							class="w-full flex items-start gap-2 px-2.5 py-2 rounded-md text-left text-sm text-fg transition-colors hover:bg-muted/15 focus:outline-none focus-visible:bg-muted/15"
+						>
+							<svg class="w-4 h-4 mt-0.5 flex-none text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+							<span class="flex-1" x-text="r.label"></span>
+						</button>
+					</li>
+				</template>
+			</ul>
+			<!-- No results / error hints -->
+			<p x-show="open && !loading && q.length >= 3 && results.length === 0 && !error" x-cloak class="mt-1 text-xs text-muted">No matches. You can enter the address manually below.</p>
+			<p x-show="error" x-cloak x-text="error" class="mt-1 text-xs text-error"></p>
+		</div>
+		<!-- Manual-entry toggle -->
+		<button
+			type="button"
+			x-show="!expanded"
+			x-cloak
+			@click="expanded = true"
+			class="mt-2 text-xs font-medium text-primary hover:underline"
+		>Enter address manually</button>
+		<!-- Structured, editable fields (revealed after a pick or manual toggle) -->
+		<div x-show="expanded" x-cloak x-collapse class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div class="sm:col-span-2">
+				@subFieldLabel("Address line 1")
+				<input type="text" x-model="addr.line1" name={ p.Name + "_line1" } required?={ p.Required } class="field" { p.Attrs... }/>
+			</div>
+			<div class="sm:col-span-2">
+				@subFieldLabel("Address line 2")
+				<input type="text" x-model="addr.line2" name={ p.Name + "_line2" } class="field" placeholder="Apt, suite, unit (optional)"/>
+			</div>
+			<div>
+				@subFieldLabel("City")
+				<input type="text" x-model="addr.city" name={ p.Name + "_city" } required?={ p.Required } class="field"/>
+			</div>
+			<div>
+				@subFieldLabel("State / Province")
+				<input type="text" x-model="addr.region" name={ p.Name + "_region" } class="field"/>
+			</div>
+			<div>
+				@subFieldLabel("Postal / ZIP code")
+				<input type="text" x-model="addr.postal" name={ p.Name + "_postal" } required?={ p.Required } class="field"/>
+			</div>
+			<div>
+				@subFieldLabel("Country")
+				<input type="text" x-model="addr.country" name={ p.Name + "_country" } class="field" placeholder="e.g. CA"/>
+			</div>
+		</div>
+		{ children... }
+	</div>
+}
+
+// subFieldLabel is a smaller caption used for the structured address sub-fields.
+templ subFieldLabel(label string) {
+	<span class="block text-xs font-medium text-muted mb-1">{ label }</span>
+}
+
+// DateInputProps is the static config for @DateInput — a modern calendar
+// popover over a real hidden <input> that carries the canonical ISO
+// "YYYY-MM-DD" value, so it submits with a normal form POST and works with
+// hx-* hooks via Attrs, while the visible UI stays consistent across every
+// browser (native date pickers don't).
+//
+// NO external <script>: the entire calendar (month grid, keyboard roaming,
+// min/max, today/clear) lives in an inline Alpine x-data object (dateXData).
+// Per-instance config arrives via data-* attributes read in init().
+//
+// Value / Min / Max are ISO "YYYY-MM-DD" strings, compared lexicographically
+// (valid for zero-padded ISO dates) to disable out-of-range days.
+type DateInputProps struct {
+	Name        string
+	Label       string
+	Hint        string
+	Placeholder string
+	Value       string // ISO YYYY-MM-DD
+	Min         string // ISO YYYY-MM-DD, optional lower bound
+	Max         string // ISO YYYY-MM-DD, optional upper bound
+	Required    bool
+	Danger      bool
+	Attrs       templ.Attributes
+}
+
+// dateXData is the complete inline Alpine component — no registration script.
+// Config comes from this.$el.dataset (initial / min / max / required /
+// placeholder). The grid is Monday-first; keyboard roaming is driven by an ISO
+// `cursor`, and the hidden input mirrors `value` (dispatching native change so
+// hx-trigger="change" fires). All ISO<->Date math is local-time to avoid
+// timezone drift.
+const dateXData = `{
+	open:false, value:'', min:'', max:'', required:false, cursor:'', view:null,
+	placeholder:'Select a date',
+	weekdays:['Mo','Tu','We','Th','Fr','Sa','Su'],
+	monthNames:['January','February','March','April','May','June','July','August','September','October','November','December'],
+	init(){
+		const d=this.$el.dataset;
+		this.value=d.initial||''; this.min=d.min||''; this.max=d.max||'';
+		this.required=d.required==='true'; this.placeholder=d.placeholder||'Select a date';
+		const base=this.value?this.parseISO(this.value):new Date();
+		this.view=new Date(base.getFullYear(),base.getMonth(),1);
+		this.$watch('value',()=>{ this.$refs.hidden.dispatchEvent(new Event('change',{bubbles:true})); });
+	},
+	parseISO(s){ const p=s.split('-').map(Number); return new Date(p[0],p[1]-1,p[2]); },
+	toISO(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); },
+	get label(){ if(!this.value)return ''; return this.parseISO(this.value).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); },
+	get monthLabel(){ return this.monthNames[this.view.getMonth()]+' '+this.view.getFullYear(); },
+	get invalid(){ return this.required && !this.value; },
+	get grid(){
+		const y=this.view.getFullYear(), m=this.view.getMonth();
+		const offset=(new Date(y,m,1).getDay()+6)%7;
+		const dim=new Date(y,m+1,0).getDate();
+		const cells=[];
+		for(let i=0;i<offset;i++) cells.push(null);
+		for(let dd=1;dd<=dim;dd++) cells.push(this.toISO(new Date(y,m,dd)));
+		return cells;
+	},
+	isToday(iso){ return iso===this.toISO(new Date()); },
+	isDisabled(iso){ return (this.min&&iso<this.min)||(this.max&&iso>this.max); },
+	toggle(){ this.open=!this.open; if(this.open){ this.cursor=this.value||this.toISO(new Date()); const c=this.parseISO(this.cursor); this.view=new Date(c.getFullYear(),c.getMonth(),1); this.$nextTick(()=>this.focusCursor()); } },
+	select(iso){ if(this.isDisabled(iso))return; this.value=iso; this.open=false; },
+	clear(){ this.value=''; this.cursor=this.toISO(new Date()); },
+	goToday(){ const iso=this.toISO(new Date()); if(!this.isDisabled(iso))this.value=iso; this.view=new Date(); this.open=false; },
+	prevMonth(){ this.view=new Date(this.view.getFullYear(),this.view.getMonth()-1,1); },
+	nextMonth(){ this.view=new Date(this.view.getFullYear(),this.view.getMonth()+1,1); },
+	move(delta){ const base=this.parseISO(this.cursor||this.value||this.toISO(new Date())); base.setDate(base.getDate()+delta); this.cursor=this.toISO(base); if(base.getMonth()!==this.view.getMonth()||base.getFullYear()!==this.view.getFullYear()){ this.view=new Date(base.getFullYear(),base.getMonth(),1); } this.$nextTick(()=>this.focusCursor()); },
+	focusCursor(){ const el=this.$refs.grid.querySelector('[data-iso="'+this.cursor+'"]'); if(el)el.focus(); }
+}`
+
+// DateInput renders a labelled date field with a custom calendar popover.
+// Self-contained: only Alpine is required on the page.
+templ DateInput(p DateInputProps) {
+	<div
+		class="block"
+		x-data={ dateXData }
+		data-initial={ p.Value }
+		data-min={ p.Min }
+		data-max={ p.Max }
+		data-placeholder={ p.Placeholder }
+		data-required={ fmt.Sprintf("%t", p.Required) }
+	>
+		if p.Label != "" {
+			if !p.Danger {
+				@FieldLabel(p.Label, p.Hint)
+			} else {
+				@DangerLabel(p.Label, p.Hint)
+			}
+		}
+		<!-- relative wrapper anchors the absolutely-positioned popover -->
+		<div class="relative" @keydown.escape.stop="open = false">
+			<!-- Trigger: styled like a .field so it sits flush with sibling inputs.
+			     It's a real <button> for keyboard + screen-reader semantics. -->
+			<button
+				type="button"
+				class="field flex items-center gap-2 text-left"
+				:class="{ 'text-muted': !value }"
+				:aria-invalid="invalid ? 'true' : null"
+				aria-haspopup="dialog"
+				:aria-expanded="open"
+				@click="toggle()"
+			>
+				<svg class="w-4 h-4 flex-none text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<rect x="3" y="4" width="18" height="18" rx="2"></rect>
+					<path d="M16 2v4M8 2v4M3 10h18"></path>
+				</svg>
+				<span class="flex-1 truncate" x-text="label || placeholder"></span>
+				<!-- clear button, only when a value is set -->
+				<span
+					x-show="value"
+					x-cloak
+					role="button"
+					tabindex="0"
+					aria-label="Clear date"
+					class="flex-none rounded p-0.5 text-muted hover:text-fg hover:bg-muted/15 transition-colors"
+					@click.stop="clear()"
+					@keydown.enter.stop.prevent="clear()"
+				>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+						<path d="M18 6 6 18M6 6l12 12"></path>
+					</svg>
+				</span>
+			</button>
+			<!-- The real submitted value. Alpine keeps it in sync and dispatches a
+			     native change event so hx-trigger="change" (via Attrs) fires. -->
+			<input
+				type="hidden"
+				name={ p.Name }
+				x-ref="hidden"
+				:value="value"
+				{ p.Attrs... }
+			/>
+			<!-- Calendar popover -->
+			<div
+				x-show="open"
+				x-cloak
+				x-transition:enter="transition ease-out duration-150"
+				x-transition:enter-start="opacity-0 -translate-y-1 scale-95"
+				x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+				x-transition:leave="transition ease-in duration-100"
+				x-transition:leave-start="opacity-100"
+				x-transition:leave-end="opacity-0"
+				@click.outside="open = false"
+				role="dialog"
+				aria-label="Choose date"
+				class="absolute z-30 mt-2 w-72 card shadow-lg p-3 origin-top"
+			>
+				<!-- Month navigation -->
+				<div class="flex items-center justify-between mb-2">
+					<button type="button" class="rounded-lg p-1.5 text-muted hover:text-fg hover:bg-muted/15 transition-colors" aria-label="Previous month" @click="prevMonth()">
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+					</button>
+					<span class="text-sm font-semibold text-fg" x-text="monthLabel" aria-live="polite"></span>
+					<button type="button" class="rounded-lg p-1.5 text-muted hover:text-fg hover:bg-muted/15 transition-colors" aria-label="Next month" @click="nextMonth()">
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+					</button>
+				</div>
+				<!-- Weekday header (Monday-first) -->
+				<div class="grid grid-cols-7 gap-1 mb-1">
+					<template x-for="wd in weekdays" :key="wd">
+						<span class="text-center text-[0.65rem] font-medium uppercase tracking-wide text-muted py-1" x-text="wd"></span>
+					</template>
+				</div>
+				<!-- Day grid: arrow keys roam, Enter selects, Escape closes -->
+				<div
+					class="grid grid-cols-7 gap-1"
+					x-ref="grid"
+					@keydown.arrow-left.prevent="move(-1)"
+					@keydown.arrow-right.prevent="move(1)"
+					@keydown.arrow-up.prevent="move(-7)"
+					@keydown.arrow-down.prevent="move(7)"
+					@keydown.enter.prevent="cursor && select(cursor)"
+				>
+					<template x-for="(iso, idx) in grid" :key="idx">
+						<div>
+							<template x-if="iso">
+								<button
+									type="button"
+									:data-iso="iso"
+									:tabindex="iso === cursor ? 0 : -1"
+									:disabled="isDisabled(iso)"
+									:aria-selected="iso === value"
+									@click="select(iso)"
+									class="w-9 h-9 flex items-center justify-center text-sm rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:cursor-not-allowed"
+									:class="iso === value
+										? 'bg-primary text-primary-foreground font-semibold'
+										: (isToday(iso)
+											? 'text-primary font-semibold hover:bg-muted/15'
+											: 'text-fg hover:bg-muted/15')"
+									x-text="Number(iso.slice(8, 10))"
+								></button>
+							</template>
+							<template x-if="!iso">
+								<span class="w-9 h-9 block"></span>
+							</template>
+						</div>
+					</template>
+				</div>
+				<!-- Footer: quick Today / Clear actions -->
+				<div class="flex items-center justify-between mt-3 pt-2 border-t border-border">
+					<button type="button" class="text-xs font-medium text-primary hover:underline" @click="goToday()">Today</button>
+					<button type="button" class="text-xs font-medium text-muted hover:text-fg" @click="clear()">Clear</button>
+				</div>
+			</div>
+		</div>
+		<!-- Parent-owned inline validation slot (bind with x-show + x-text) -->
+		{ children... }
+	</div>
+}
+
+// DateOfBirthProps is the static config for @DateOfBirth. Unlike @DateInput
+// (a calendar popover, great for near-term dates), a birth date is entered
+// far faster with three Day / Month / Year selects — no one wants to click a
+// calendar back 30 years. The three parts are combined into a real hidden
+// <input> carrying the canonical ISO "YYYY-MM-DD", so the field submits with
+// a normal form POST and works with hx-* hooks via Attrs.
+//
+// NO external <script>: behaviour is an inline Alpine x-data object (dobXData);
+// per-instance config arrives via data-* attributes read in init().
+//
+// Value, if given, is an ISO "YYYY-MM-DD" used to prefill the selects.
+// MinAge / MaxAge (in years) constrain the selectable year range and drive
+// client-side validation (e.g. MinAge:18 for an adults-only signup).
+type DateOfBirthProps struct {
+	Name     string
+	Label    string
+	Hint     string
+	Value    string // ISO YYYY-MM-DD
+	MinAge   int    // optional; e.g. 18. 0 = no minimum
+	MaxAge   int    // optional; e.g. 120. 0 = defaults to 120
+	Required bool
+	Danger   bool
+	Attrs    templ.Attributes
+}
+
+// dobXData is the complete inline Alpine component — no registration script.
+// Config comes from this.$el.dataset (initial / minage / maxage / required).
+const dobXData = `{
+	day:'', month:'', year:'', required:false, minAge:0, maxAge:120,
+	monthNames:['January','February','March','April','May','June','July','August','September','October','November','December'],
+	init() {
+		const d=this.$el.dataset;
+		this.required=d.required==='true';
+		this.minAge=parseInt(d.minage||'0',10);
+		this.maxAge=parseInt(d.maxage||'120',10);
+
+		if(d.initial){
+			const p=d.initial.split('-').map(Number);
+			if(p[0]&&p[1]&&p[2]){
+				this.$nextTick(() => {
+					this.year=p[0]; this.month=p[1]; this.day=p[2];
+				});
+			}
+		}
+
+		const form = this.$el.closest('form');
+		if (form) {
+			this._onReset = () => { this.day=''; this.month=''; this.year=''; };
+			form.addEventListener('reset', this._onReset);
+		}
+		this.$watch('iso',()=>{ this.$refs.hidden.dispatchEvent(new Event('change',{bubbles:true})); });
+	},
+	destroy(){
+		if (this._onReset) this.$el.closest('form')?.removeEventListener('reset', this._onReset);
+	},
+	get years(){ const now=new Date().getFullYear(); const out=[]; for(let y=now-this.minAge;y>=now-this.maxAge;y--)out.push(y); return out; },
+	get days(){ const dim=(this.month&&this.year)?new Date(this.year,this.month,0).getDate():31; return Array.from({length:dim},(_,i)=>i+1); },
+	get complete(){ return !!(this.day&&this.month&&this.year); },
+	get message(){
+		if(!this.complete) return '';
+		const dim=new Date(this.year,this.month,0).getDate();
+		if(this.day>dim) return 'That date is not valid for the selected month.';
+		const dob=new Date(this.year,this.month-1,this.day);
+		const today=new Date();
+		if(dob>today) return 'Birth date cannot be in the future.';
+		if(this.minAge>0){ const floor=new Date(today.getFullYear()-this.minAge,today.getMonth(),today.getDate()); if(dob>floor) return 'You must be at least '+this.minAge+' years old.'; }
+		return '';
+	},
+	get invalid(){ return this.complete && !!this.message; },
+	get iso(){ if(!this.complete||this.message) return ''; return this.year+'-'+String(this.month).padStart(2,'0')+'-'+String(this.day).padStart(2,'0'); }
+}`
+
+// DateOfBirth renders a labelled D/M/Y birth-date field. Self-contained: only
+// Alpine is required on the page.
+templ DateOfBirth(p DateOfBirthProps) {
+	<div
+		class="block"
+		x-data={ dobXData }
+		data-initial={ p.Value }
+		data-minage={ itoa(p.MinAge) }
+		data-maxage={ itoa(p.MaxAge) }
+		data-required={ fmt.Sprintf("%t", p.Required) }
+	>
+		if p.Label != "" {
+			if !p.Danger {
+				@FieldLabel(p.Label, p.Hint)
+			} else {
+				@DangerLabel(p.Label, p.Hint)
+			}
+		}
+		<div class="grid grid-cols-[1fr_1.4fr_1fr] gap-2">
+			<!-- Day -->
+			<select
+				x-model.number="day"
+				aria-label="Day of birth"
+				class="field appearance-none bg-no-repeat pr-8"
+				:class="invalid ? 'border-error' : ''"
+				required?={ p.Required }
+			>
+				<option value="" disabled>Day</option>
+				<template x-for="d in days" :key="d">
+					<option :value="d" x-text="d"></option>
+				</template>
+			</select>
+			<!-- Month -->
+			<select
+				x-model.number="month"
+				aria-label="Month of birth"
+				class="field appearance-none bg-no-repeat pr-8"
+				:class="invalid ? 'border-error' : ''"
+				required?={ p.Required }
+			>
+				<option value="" disabled>Month</option>
+				<template x-for="(m, i) in monthNames" :key="i">
+					<option :value="i + 1" x-text="m"></option>
+				</template>
+			</select>
+			<!-- Year -->
+			<select
+				x-model.number="year"
+				aria-label="Year of birth"
+				class="field appearance-none bg-no-repeat pr-8"
+				:class="invalid ? 'border-error' : ''"
+				required?={ p.Required }
+			>
+				<option value="" disabled>Year</option>
+				<template x-for="y in years" :key="y">
+					<option :value="y" x-text="y"></option>
+				</template>
+			</select>
+		</div>
+		<!-- The real submitted value: canonical ISO date (empty until complete/valid). -->
+		<input type="hidden" name={ p.Name } x-ref="hidden" :value="iso" { p.Attrs... }/>
+		<!-- Built-in age/validity message + parent-owned slot -->
+		<p x-show="message" x-cloak x-text="message" class="mt-1 text-xs text-error"></p>
+		{ children... }
+	</div>
+}
+
+// PhoneInputProps is the static config for @PhoneInput. It renders a country
+// dial-code selector (searchable Alpine popover) next to a national-number
+// field, and keeps a real hidden <input> in sync with the full E.164 value
+// (e.g. "+14165551234") — so the field submits with a normal form POST and
+// works with hx-* hooks via Attrs.
+//
+// NO external <script>: all behaviour lives in an inline Alpine x-data object
+// (phoneXData). Per-instance config is passed via data-* attributes and read
+// in init(); the country list is embedded directly in the x-data literal.
+//
+// The visible national field is intentionally NOT named, so only the
+// normalized E.164 value is submitted under Name. DefaultCountry is an ISO
+// 3166-1 alpha-2 code (e.g. "CA", "US", "GB"). Value, if given, is a full
+// E.164 string used to prefill both parts.
+type PhoneInputProps struct {
+	Name           string
+	Label          string
+	Hint           string
+	Placeholder    string
+	Value          string // full E.164, e.g. "+14165551234"
+	DefaultCountry string // ISO alpha-2, e.g. "CA"
+	Required       bool
+	Danger         bool
+	Attrs          templ.Attributes
+}
+
+// phoneCountriesJS is the dial-code list embedded straight into the inline
+// x-data (single-quoted so it nests cleanly inside the templ attribute).
+// Extend as needed — it is the single source of truth for both the picker and
+// E.164 parsing.
+const phoneCountriesJS = `[` +
+	`{iso:'US',name:'United States',dial:'+1'},` +
+	`{iso:'CA',name:'Canada',dial:'+1'},` +
+	`{iso:'GB',name:'United Kingdom',dial:'+44'},` +
+	`{iso:'IE',name:'Ireland',dial:'+353'},` +
+	`{iso:'FR',name:'France',dial:'+33'},` +
+	`{iso:'DE',name:'Germany',dial:'+49'},` +
+	`{iso:'ES',name:'Spain',dial:'+34'},` +
+	`{iso:'IT',name:'Italy',dial:'+39'},` +
+	`{iso:'PT',name:'Portugal',dial:'+351'},` +
+	`{iso:'NL',name:'Netherlands',dial:'+31'},` +
+	`{iso:'BE',name:'Belgium',dial:'+32'},` +
+	`{iso:'CH',name:'Switzerland',dial:'+41'},` +
+	`{iso:'AT',name:'Austria',dial:'+43'},` +
+	`{iso:'SE',name:'Sweden',dial:'+46'},` +
+	`{iso:'NO',name:'Norway',dial:'+47'},` +
+	`{iso:'DK',name:'Denmark',dial:'+45'},` +
+	`{iso:'FI',name:'Finland',dial:'+358'},` +
+	`{iso:'PL',name:'Poland',dial:'+48'},` +
+	`{iso:'AU',name:'Australia',dial:'+61'},` +
+	`{iso:'NZ',name:'New Zealand',dial:'+64'},` +
+	`{iso:'JP',name:'Japan',dial:'+81'},` +
+	`{iso:'KR',name:'South Korea',dial:'+82'},` +
+	`{iso:'CN',name:'China',dial:'+86'},` +
+	`{iso:'IN',name:'India',dial:'+91'},` +
+	`{iso:'SG',name:'Singapore',dial:'+65'},` +
+	`{iso:'AE',name:'United Arab Emirates',dial:'+971'},` +
+	`{iso:'BR',name:'Brazil',dial:'+55'},` +
+	`{iso:'MX',name:'Mexico',dial:'+52'},` +
+	`{iso:'AR',name:'Argentina',dial:'+54'},` +
+	`{iso:'ZA',name:'South Africa',dial:'+27'}` +
+	`]`
+
+// phoneXData is the complete inline Alpine component — no registration script.
+// Config comes from this.$el.dataset (country / initial / required).
+//
+// `touched` starts false so the field never renders in an error state on first
+// paint. It flips true once the user blurs the national field (or a prefilled
+// value fails validation), and the red styling is driven by `showError`
+// (touched && invalid) rather than `invalid` directly.
+const phoneXData = `{
+	open:false, q:'', country:'US', national:'', required:false, touched:false, countries:` + phoneCountriesJS + `,
+	init(){
+		const d=this.$el.dataset;
+		this.country=d.country||'US';
+		this.required=d.required==='true';
+		if(d.initial){ this.parseE164(d.initial); this.touched=true; }
+		this.format();
+		const form = this.$el.closest('form');
+			if (form) {
+				this._onReset = () => {
+		  			this.touched=false;
+				};
+				form.addEventListener('reset', this._onReset);
+			}
+		this.$watch('e164',()=>{ this.$refs.hidden.dispatchEvent(new Event('change',{bubbles:true})); });
+	},
+	get current(){ return this.countries.find(c=>c.iso===this.country)||this.countries[0]; },
+	get digits(){ return this.national.replace(/\D/g,''); },
+	get e164(){ return this.digits?this.current.dial+this.digits:''; },
+	get invalid(){ if(this.required&&!this.digits)return true; return this.digits.length>0&&(this.digits.length<4||this.digits.length>15); },
+	get showError(){ return this.touched&&this.invalid; },
+	get filtered(){ const q=this.q.trim().toLowerCase(); if(!q)return this.countries; return this.countries.filter(c=>c.name.toLowerCase().includes(q)||c.iso.toLowerCase().includes(q)||c.dial.includes(q)); },
+	toggle(){ this.open=!this.open; if(this.open){ this.q=''; this.$nextTick(()=>this.$refs.search.focus()); } },
+	choose(iso){ this.country=iso; this.open=false; },
+	format(){ const d=this.digits.slice(0,15); let out=d; if(d.length>6)out=d.slice(0,3)+' '+d.slice(3,6)+' '+d.slice(6); else if(d.length>3)out=d.slice(0,3)+' '+d.slice(3); this.national=out; },
+	parseE164(v){ const s=String(v).trim(); const m=[...this.countries].sort((a,b)=>b.dial.length-a.dial.length).find(c=>s.startsWith(c.dial)); if(m){ this.country=m.iso; this.national=s.slice(m.dial.length); } else { this.national=s.replace(/^\+/,''); } }
+}`
+
+// PhoneInput renders a labelled international phone field. Self-contained: no
+// companion script is required — just Alpine on the page.
+templ PhoneInput(p PhoneInputProps) {
+	{{ph := p.Placeholder
+if ph == "" {
+	ph = "555 123 4567"
+}
+	}}
+	{{dc := p.DefaultCountry
+if dc == "" {
+	dc = "CA"
+}
+	}}
+	<div
+		class="block"
+		x-data={ phoneXData }
+		data-country={ dc }
+		data-initial={ p.Value }
+		data-required={ fmt.Sprintf("%t", p.Required) }
+		@keydown.escape.stop="open = false"
+	>
+		if p.Label != "" {
+			if !p.Danger {
+				@FieldLabel(p.Label, p.Hint)
+			} else {
+				@DangerLabel(p.Label, p.Hint)
+			}
+		}
+		<!-- Group: dial-code button + national number, styled as one field-like row -->
+		<div
+			class="flex items-stretch rounded-lg border border-border bg-surface transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/40"
+			:class="showError ? 'border-error' : ''"
+		>
+			<!-- Country selector -->
+			<div class="relative flex-none">
+				<button
+					type="button"
+					class="h-full flex items-center gap-1.5 pl-3 pr-2 rounded-l-lg text-sm text-fg hover:bg-muted/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					aria-haspopup="listbox"
+					:aria-expanded="open"
+					@click="toggle()"
+				>
+					<span class="font-medium tabular-nums" x-text="current.dial"></span>
+					<svg class="w-3.5 h-3.5 text-muted transition-transform" :class="open ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+				</button>
+				<span class="absolute inset-y-1.5 right-0 w-px bg-border" aria-hidden="true"></span>
+				<!-- Country popover -->
+				<div
+					x-show="open"
+					x-cloak
+					x-transition:enter="transition ease-out duration-150"
+					x-transition:enter-start="opacity-0 -translate-y-1 scale-95"
+					x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+					x-transition:leave="transition ease-in duration-100"
+					x-transition:leave-start="opacity-100"
+					x-transition:leave-end="opacity-0"
+					@click.outside="open = false"
+					role="listbox"
+					aria-label="Select country calling code"
+					class="absolute z-30 mt-2 w-64 card shadow-lg p-2 origin-top-left"
+				>
+					<!-- Search box -->
+					<div class="relative mb-2">
+						<svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+						<input
+							type="text"
+							x-ref="search"
+							x-model="q"
+							placeholder="Search country…"
+							class="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-border bg-background text-fg placeholder:text-muted focus:outline-none focus:border-primary"
+						/>
+					</div>
+					<!-- Results -->
+					<ul class="max-h-56 overflow-y-auto -mx-1">
+						<template x-for="c in filtered" :key="c.iso">
+							<li>
+								<button
+									type="button"
+									role="option"
+									:aria-selected="c.iso === country"
+									@click="choose(c.iso)"
+									class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors hover:bg-muted/15"
+									:class="c.iso === country ? 'bg-primary/10 text-primary font-medium' : 'text-fg'"
+								>
+									<span class="flex-none w-7 text-xs font-semibold text-muted" x-text="c.iso"></span>
+									<span class="flex-1 truncate" x-text="c.name"></span>
+									<span class="flex-none text-xs text-muted tabular-nums" x-text="c.dial"></span>
+								</button>
+							</li>
+						</template>
+						<li x-show="filtered.length === 0" class="px-2 py-3 text-center text-xs text-muted">No matches</li>
+					</ul>
+				</div>
+			</div>
+			<!-- National number -->
+			<input
+				type="tel"
+				inputmode="tel"
+				autocomplete="tel-national"
+				x-model="national"
+				@input="format()"
+				@blur="touched = true"
+				placeholder={ ph }
+				class="flex-1 min-w-0 bg-transparent px-3 py-2.5 text-sm text-fg placeholder:text-muted focus:outline-none"
+				aria-label="Phone number"
+				required?={ p.Required }
+			/>
+		</div>
+		<!-- The real submitted value: normalized E.164. -->
+		<input type="hidden" name={ p.Name } x-ref="hidden" :value="e164" { p.Attrs... }/>
+		<!-- Parent-owned inline validation slot -->
+		{ children... }
+	</div>
+}

@@ -31,6 +31,46 @@ templ Checkbox(p CheckboxProps) {
 	</label>
 }
 
+// Each tile is a native checkbox, so selection state is driven purely by CSS
+// (has-[:checked]) with no Alpine needed. Place it inside a <form>; every
+// checked box submits its Name/Value pair with the rest of the form. Use the
+// same Name across options for an array-style group, or distinct names for
+// independent flags.
+templ CheckboxGroupTiles(label string, showValues bool, opts ...CheckboxProps) {
+	<fieldset>
+		if label != "" {
+			<legend class="text-sm font-medium text-fg mb-2">{ label }</legend>
+		}
+		<div class="mt-1.5 grid grid-cols-2 gap-2">
+			for _, o := range opts {
+				<label
+					class={
+						"text-left p-3 rounded-lg border transition",
+						"border-border",
+						"has-[:checked]:border-primary has-[:checked]:bg-std",
+						templ.KV("hover:bg-std cursor-pointer", !o.Disabled),
+						templ.KV("opacity-50 cursor-not-allowed", o.Disabled),
+					}
+				>
+					<input
+						type="checkbox"
+						name={ o.Name }
+						value={ nonEmpty(o.Value, "on") }
+						checked?={ o.Checked }
+						disabled?={ o.Disabled }
+						class="sr-only"
+						{ o.Attrs... }
+					/>
+					<p class="text-sm font-semibold">{ o.Label }</p>
+					if showValues {
+						<p class="text-xs text-muted truncate">{ o.Value }</p>
+					}
+				</label>
+			}
+		</div>
+	</fieldset>
+}
+
 // RadioOption is one choice inside a @RadioGroup.
 type RadioOption struct {
 	Value   string

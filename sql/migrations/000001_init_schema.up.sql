@@ -364,7 +364,7 @@ CREATE TABLE assignment_mmpi_scales (
     scale_code TEXT, -- Scale.Code / Name, e.g. 'Hs', 'D', 'VRIN'
     scale_name TEXT NOT NULL, -- ScaleResult.ScaleName
     scale_description TEXT, -- ScaleResult.ScaleDescription (Scale.Title)
-    scale_purpose TEXT, -- ScaleResult.ScalePupose (Scale.Text / Comment / "N/A")
+    scale_purpose TEXT, -- ScaleResult.ScalePurpose (Scale.Text / Comment / "N/A")
     raw_score NUMERIC, -- pre-T-score/pre-K-correction sum, for audit; NULL if not tracked
     score NUMERIC NOT NULL, -- ScaleResult.Score (final T-score or raw score)
     display_order SMALLINT NOT NULL DEFAULT 0

@@ -683,6 +683,15 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]*Se
 	return items, nil
 }
 
+const setActorID = `-- name: SetActorID :exec
+SELECT set_config('app.current_user_id', $1, true)
+`
+
+func (q *Queries) SetActorID(ctx context.Context, setConfig string) error {
+	_, err := q.db.Exec(ctx, setActorID, setConfig)
+	return err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET

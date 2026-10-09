@@ -12,22 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countRemindersForAssignment = `-- name: CountRemindersForAssignment :one
+const countRemindersForExamination = `-- name: CountRemindersForExamination :one
 SELECT COUNT(*) FROM assignment_reminders r
-JOIN assignments a ON a.id = r.assignment_id
-JOIN patients p ON p.id = a.patient_id
-WHERE r.assignment_id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+JOIN examinations e ON e.id = r.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE r.examination_id = $1
+  AND (e.is_developer_data OR p.is_developer_data) = is_developer_user($2)
 `
 
-type CountRemindersForAssignmentParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+type CountRemindersForExaminationParams struct {
+	ExaminationID uuid.UUID `json:"examination_id"`
+	ViewerID      uuid.UUID `json:"viewer_id"`
 }
 
-// For a small "3 reminders sent" badge/tooltip.
-func (q *Queries) CountRemindersForAssignment(ctx context.Context, arg CountRemindersForAssignmentParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countRemindersForAssignment, arg.AssignmentID, arg.ViewerID)
+func (q *Queries) CountRemindersForExamination(ctx context.Context, arg CountRemindersForExaminationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRemindersForExamination, arg.ExaminationID, arg.ViewerID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -36,20 +35,20 @@ func (q *Queries) CountRemindersForAssignment(ctx context.Context, arg CountRemi
 const createAssignmentReminder = `-- name: CreateAssignmentReminder :one
 
 INSERT INTO assignment_reminders (
-    id, assignment_id, sent_by
+    id, examination_id, sent_by
 )
-SELECT $1, a.id, $2
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-WHERE a.id = $3
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
-RETURNING id, assignment_id, sent_by, sent_at
+SELECT $1, e.id, $2
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = $3
+  AND (e.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+RETURNING id, sent_by, sent_at, examination_id
 `
 
 type CreateAssignmentReminderParams struct {
-	ID           uuid.UUID  `json:"id"`
-	SentBy       *uuid.UUID `json:"sent_by"`
-	AssignmentID uuid.UUID  `json:"assignment_id"`
+	ID            uuid.UUID  `json:"id"`
+	SentBy        *uuid.UUID `json:"sent_by"`
+	ExaminationID uuid.UUID  `json:"examination_id"`
 }
 
 // assignment_reminders.sql
@@ -57,70 +56,52 @@ type CreateAssignmentReminderParams struct {
 // sqlc queries for the assignment_reminders table — just an audit trail
 // of "Send reminder" events, no scoring/state-machine logic here.
 //
-// Same inherited-partition pattern as remote_access_tokens.sql (this
-// table has no is_developer_data column of its own; visibility comes
-// via join to assignments/patients):
+// After the examinations migration, reminders belong to an examination
+// (the delivery unit that owns the remote link and due_at), not to an
+// individual assignment.
 //
-//	(a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
+// Same inherited-partition pattern as remote_access_tokens.sql:
 //
-// applies to the staff-facing queries (CreateAssignmentReminder and the
-// list/count/throttle-check reads).
+//	(e.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
 //
-// ListAssignmentsDueForReminder is different from every other query in
-// this file: it's meant to be called by a scheduled job, not a logged-
-// in staff member, so there's no viewer_id to check against — same
-// reasoning as MarkAssignmentReadyForReview in assignments.sql. But
-// unlike that query, this one still can't just skip the partition
-// question entirely: an automated job blasting reminder emails should
-// never pick up developer test assignments (which likely don't even
-// have real email addresses behind them), so it hard-excludes
-// is_developer_data rows unconditionally, rather than gating on who's
-// asking.
-//
-// sent_by is nullable on the table itself specifically so this file can
-// distinguish a human-initiated reminder from a scheduled one — see
-// CreateAssignmentReminder vs CreateSystemAssignmentReminder.
-// A staff member clicking "Send reminder". sent_by is the clicking
-// user, who also doubles as the viewer for the partition check (same
-// reasoning as reviewer_id in assignments.CompleteAssignmentReview).
+// ListExaminationsDueForReminder is meant for a scheduled job, so it
+// has no viewer_id and hard-excludes developer data.
+// Staff member clicking "Send reminder".
 func (q *Queries) CreateAssignmentReminder(ctx context.Context, arg CreateAssignmentReminderParams) (*AssignmentReminder, error) {
-	row := q.db.QueryRow(ctx, createAssignmentReminder, arg.ID, arg.SentBy, arg.AssignmentID)
+	row := q.db.QueryRow(ctx, createAssignmentReminder, arg.ID, arg.SentBy, arg.ExaminationID)
 	var i AssignmentReminder
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
 		&i.SentBy,
 		&i.SentAt,
+		&i.ExaminationID,
 	)
 	return &i, err
 }
 
 const createSystemAssignmentReminder = `-- name: CreateSystemAssignmentReminder :one
 INSERT INTO assignment_reminders (
-    id, assignment_id, sent_by
+    id, examination_id, sent_by
 ) VALUES (
     $1, $2, NULL
 )
-RETURNING id, assignment_id, sent_by, sent_at
+RETURNING id, sent_by, sent_at, examination_id
 `
 
 type CreateSystemAssignmentReminderParams struct {
-	ID           uuid.UUID `json:"id"`
-	AssignmentID uuid.UUID `json:"assignment_id"`
+	ID            uuid.UUID `json:"id"`
+	ExaminationID uuid.UUID `json:"examination_id"`
 }
 
-// A scheduled job's automated reminder — sent_by is left NULL (no
-// human triggered this), and there's deliberately no partition check
-// here: by the time this is called, the assignment_id already came from
-// ListAssignmentsDueForReminder, which already excluded developer data.
+// Scheduled job automated reminder — sent_by is NULL.
 func (q *Queries) CreateSystemAssignmentReminder(ctx context.Context, arg CreateSystemAssignmentReminderParams) (*AssignmentReminder, error) {
-	row := q.db.QueryRow(ctx, createSystemAssignmentReminder, arg.ID, arg.AssignmentID)
+	row := q.db.QueryRow(ctx, createSystemAssignmentReminder, arg.ID, arg.ExaminationID)
 	var i AssignmentReminder
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
 		&i.SentBy,
 		&i.SentAt,
+		&i.ExaminationID,
 	)
 	return &i, err
 }
@@ -128,55 +109,51 @@ func (q *Queries) CreateSystemAssignmentReminder(ctx context.Context, arg Create
 const getLastReminderSentAt = `-- name: GetLastReminderSentAt :one
 SELECT MAX(r.sent_at)::TIMESTAMPTZ AS last_sent_at
 FROM assignment_reminders r
-JOIN assignments a ON a.id = r.assignment_id
-JOIN patients p ON p.id = a.patient_id
-WHERE r.assignment_id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+JOIN examinations e ON e.id = r.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE r.examination_id = $1
+  AND (e.is_developer_data OR p.is_developer_data) = is_developer_user($2)
 `
 
 type GetLastReminderSentAtParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+	ExaminationID uuid.UUID `json:"examination_id"`
+	ViewerID      uuid.UUID `json:"viewer_id"`
 }
 
-// For a UI throttle ("last reminder sent 2h ago, try again after 24h")
-// or to decide whether to grey out the "Send reminder" button. NULL if
-// none have ever been sent.
 func (q *Queries) GetLastReminderSentAt(ctx context.Context, arg GetLastReminderSentAtParams) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, getLastReminderSentAt, arg.AssignmentID, arg.ViewerID)
+	row := q.db.QueryRow(ctx, getLastReminderSentAt, arg.ExaminationID, arg.ViewerID)
 	var last_sent_at pgtype.Timestamptz
 	err := row.Scan(&last_sent_at)
 	return last_sent_at, err
 }
 
-const listAssignmentsDueForReminder = `-- name: ListAssignmentsDueForReminder :many
+const listExaminationsDueForReminder = `-- name: ListExaminationsDueForReminder :many
 SELECT
-    a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at,
+    e.id, e.patient_id, e.mode, e.status, e.assigned_by, e.due_at, e.started_at, e.completed_at, e.reviewed_at, e.reviewed_by, e.is_developer_data, e.created_at, e.updated_at,
     p.full_name AS patient_name,
     p.email AS patient_email,
     MAX(r.sent_at) AS last_reminder_sent_at
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-LEFT JOIN assignment_reminders r ON r.assignment_id = a.id
-WHERE a.status <> 'COMPLETED'
-  AND a.due_at <= $1
-  AND NOT (a.is_developer_data OR p.is_developer_data)
-GROUP BY a.id, p.id
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+LEFT JOIN assignment_reminders r ON r.examination_id = e.id
+WHERE e.status <> 'COMPLETED'
+  AND e.due_at <= $1
+  AND NOT (e.is_developer_data OR p.is_developer_data)
+GROUP BY e.id, p.id
 HAVING MAX(r.sent_at) IS NULL OR MAX(r.sent_at) < $2
-ORDER BY a.due_at
+ORDER BY e.due_at
 `
 
-type ListAssignmentsDueForReminderParams struct {
+type ListExaminationsDueForReminderParams struct {
 	DueBefore      pgtype.Timestamptz `json:"due_before"`
 	ReminderCutoff pgtype.Timestamptz `json:"reminder_cutoff"`
 }
 
-type ListAssignmentsDueForReminderRow struct {
+type ListExaminationsDueForReminderRow struct {
 	ID                 uuid.UUID          `json:"id"`
 	PatientID          uuid.UUID          `json:"patient_id"`
-	TestCode           string             `json:"test_code"`
 	Mode               AssignmentMode     `json:"mode"`
-	Status             AssignmentStatus   `json:"status"`
+	Status             ExaminationStatus  `json:"status"`
 	AssignedBy         *uuid.UUID         `json:"assigned_by"`
 	DueAt              pgtype.Timestamptz `json:"due_at"`
 	StartedAt          pgtype.Timestamptz `json:"started_at"`
@@ -191,24 +168,21 @@ type ListAssignmentsDueForReminderRow struct {
 	LastReminderSentAt interface{}        `json:"last_reminder_sent_at"`
 }
 
-// For a scheduled job: not-yet-completed assignments due on or before
-// sqlc.arg(due_before), whose most recent reminder (if any) is older
-// than sqlc.arg(reminder_cutoff) — i.e. either never reminded, or not
-// reminded recently enough to remind again. Always excludes developer
-// test data (see header comment) regardless of who/what calls this.
-func (q *Queries) ListAssignmentsDueForReminder(ctx context.Context, arg ListAssignmentsDueForReminderParams) ([]*ListAssignmentsDueForReminderRow, error) {
-	rows, err := q.db.Query(ctx, listAssignmentsDueForReminder, arg.DueBefore, arg.ReminderCutoff)
+// Scheduled job: not-yet-completed examinations due on or before
+// due_before, whose most recent reminder (if any) is older than
+// reminder_cutoff. Always excludes developer test data.
+func (q *Queries) ListExaminationsDueForReminder(ctx context.Context, arg ListExaminationsDueForReminderParams) ([]*ListExaminationsDueForReminderRow, error) {
+	rows, err := q.db.Query(ctx, listExaminationsDueForReminder, arg.DueBefore, arg.ReminderCutoff)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []*ListAssignmentsDueForReminderRow
+	var items []*ListExaminationsDueForReminderRow
 	for rows.Next() {
-		var i ListAssignmentsDueForReminderRow
+		var i ListExaminationsDueForReminderRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PatientID,
-			&i.TestCode,
 			&i.Mode,
 			&i.Status,
 			&i.AssignedBy,
@@ -234,24 +208,22 @@ func (q *Queries) ListAssignmentsDueForReminder(ctx context.Context, arg ListAss
 	return items, nil
 }
 
-const listRemindersForAssignment = `-- name: ListRemindersForAssignment :many
-SELECT r.id, r.assignment_id, r.sent_by, r.sent_at FROM assignment_reminders r
-JOIN assignments a ON a.id = r.assignment_id
-JOIN patients p ON p.id = a.patient_id
-WHERE r.assignment_id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+const listRemindersForExamination = `-- name: ListRemindersForExamination :many
+SELECT r.id, r.sent_by, r.sent_at, r.examination_id FROM assignment_reminders r
+JOIN examinations e ON e.id = r.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE r.examination_id = $1
+  AND (e.is_developer_data OR p.is_developer_data) = is_developer_user($2)
 ORDER BY r.sent_at DESC
 `
 
-type ListRemindersForAssignmentParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+type ListRemindersForExaminationParams struct {
+	ExaminationID uuid.UUID `json:"examination_id"`
+	ViewerID      uuid.UUID `json:"viewer_id"`
 }
 
-// Audit trail for one assignment. sent_by NULL means it was an
-// automated reminder, not a specific staff member's click.
-func (q *Queries) ListRemindersForAssignment(ctx context.Context, arg ListRemindersForAssignmentParams) ([]*AssignmentReminder, error) {
-	rows, err := q.db.Query(ctx, listRemindersForAssignment, arg.AssignmentID, arg.ViewerID)
+func (q *Queries) ListRemindersForExamination(ctx context.Context, arg ListRemindersForExaminationParams) ([]*AssignmentReminder, error) {
+	rows, err := q.db.Query(ctx, listRemindersForExamination, arg.ExaminationID, arg.ViewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,9 +233,9 @@ func (q *Queries) ListRemindersForAssignment(ctx context.Context, arg ListRemind
 		var i AssignmentReminder
 		if err := rows.Scan(
 			&i.ID,
-			&i.AssignmentID,
 			&i.SentBy,
 			&i.SentAt,
+			&i.ExaminationID,
 		); err != nil {
 			return nil, err
 		}

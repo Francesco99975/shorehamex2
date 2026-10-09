@@ -235,3 +235,7 @@ OFFSET $3;
 SELECT COUNT(*)
 FROM users
 WHERE role = $1;
+
+
+-- name: SetActorID :exec
+SELECT set_config('app.current_user_id', $1, true);

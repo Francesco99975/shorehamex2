@@ -3,7 +3,9 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"strings"
 
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 )
@@ -163,6 +165,129 @@ func LoadP3Definition(path string) (*P3Definition, error) {
 	return &def, nil
 }
 
+type Dass42Content struct {
+	Questions []string `json:"questions"`
+}
+
+type ScoreBand struct {
+	Label      string `json:"label"`
+	UpperBound *int   `json:"upperBound"`
+}
+
+type Subscale struct {
+	Code     string      `json:"code"`
+	Name     string      `json:"name"`
+	MaxScore int         `json:"maxScore"`
+	Adjust   int         `json:"adjust"`
+	Bands    []ScoreBand `json:"bands"`
+	ItemKeys []int       `json:"itemKeys"`
+}
+
+type ScaleResult struct {
+	ScaleName        string
+	ScaleDescription string
+	ScalePurpose     string
+	Score            int32
+}
+
+type Dass42Definition struct {
+	TestDefinition
+	Subscales []Subscale    `json:"subscales"`
+	Content   Dass42Content `json:"content"`
+}
+
+type SubResult struct {
+	Score      int
+	Gravity    string
+	Percentage string
+	Indication string
+}
+
+func (def *Dass42Definition) GetSubscaleCodeFromItemKey(itemKey int) string {
+	for _, subscale := range def.Subscales {
+		for _, key := range subscale.ItemKeys {
+			if key == itemKey {
+				return subscale.Code
+			}
+		}
+	}
+	return ""
+}
+
+func LoadDass42Definition(path string) (*Dass42Definition, error) {
+	var def Dass42Definition
+	if err := loadJSON(path, &def); err != nil {
+		return nil, fmt.Errorf("load dass42 definition: %w", err)
+	}
+	return &def, nil
+}
+
+type Topic struct {
+	Name    string   `json:"name"`
+	Answers []string `json:"answers"`
+}
+
+type BDI2Content struct {
+	Topics []Topic `json:"topics"`
+}
+
+type BDI2Definition struct {
+	TestDefinition
+	Bands   []ScoreBand `json:"bands"`
+	Content BDI2Content `json:"content"`
+}
+
+func LoadBDI2Definition(path string) (*BDI2Definition, error) {
+	var def BDI2Definition
+	if err := loadJSON(path, &def); err != nil {
+		return nil, fmt.Errorf("load bdi-II definition: %w", err)
+	}
+	return &def, nil
+}
+
+type PTSDContent struct {
+	Questions []string `json:"questions"`
+}
+
+type PTSDDefinition struct {
+	TestDefinition
+	Subscales []Subscale  `json:"subscales"`
+	Content   PTSDContent `json:"content"`
+}
+
+func (def *PTSDDefinition) GetSubscaleCodeFromItemKey(itemKey int) string {
+	for _, subscale := range def.Subscales {
+		for _, key := range subscale.ItemKeys {
+			if key == itemKey {
+				return subscale.Code
+			}
+		}
+	}
+	return ""
+}
+
+func LoadPTSDDefinition(path string) (*PTSDDefinition, error) {
+	var def PTSDDefinition
+	if err := loadJSON(path, &def); err != nil {
+		return nil, fmt.Errorf("load PTSD definition: %w", err)
+	}
+	return &def, nil
+}
+
+type MMPICategoryResult struct {
+	Title              string
+	Scales             []ScaleResult
+	DerivedIndications []string
+}
+
+type MMPIResults struct {
+	ID         string
+	Patient    string
+	Sex        string
+	Categories []MMPICategoryResult
+	Duration   int
+}
+
 type Indications struct {
 	Four5__Mf__64                 []string `json:"45<=Mf<=64"`
 	Five5__Hs__64                 []string `json:"55<=Hs<=64"`
@@ -224,7 +349,7 @@ type Scale struct {
 	Title string `json:"title"`
 }
 
-type MMPIScale []struct {
+type MMPIScale struct {
 	Items []Scale `json:"items"`
 	Title string  `json:"title"`
 }
@@ -245,6 +370,349 @@ func LoadMMPIDefinition(path string) (*MMPIDefinition, error) {
 		return nil, fmt.Errorf("load mmpi definition: %w", err)
 	}
 	return &def, nil
+}
+
+func CalculateMMPI(mmpi2Def *MMPIDefinition, answers []string, sex enums.Sex) (MMPIResults, error) {
+	var results MMPIResults
+	scalesData := mmpi2Def.Content.Scales
+
+	var parsedAnswers []bool
+
+	for _, answer := range strings.Split(strings.Join(answers, ""), "") {
+		if answer == "T" {
+			parsedAnswers = append(parsedAnswers, true)
+		} else {
+			parsedAnswers = append(parsedAnswers, false)
+		}
+	}
+
+	for _, category := range scalesData {
+
+		results.Categories = append(results.Categories, MMPICategoryResult{
+			Title:              category.Title,
+			Scales:             make([]ScaleResult, 0),
+			DerivedIndications: make([]string, 0),
+		})
+
+		for _, scale := range category.Items {
+			err := grade(parsedAnswers, scale, sex, &results)
+			if err != nil {
+				return MMPIResults{}, err
+			}
+		}
+
+		results.Categories[len(results.Categories)-1].deriveIndications(scalesData, &results)
+	}
+
+	return results, nil
+}
+
+func grade(answers []bool, scale Scale, sex enums.Sex, results *MMPIResults) error {
+	if scale.Gender != sex.String() && len(scale.Gender) > 0 {
+		return nil
+	}
+
+	rawScore := scale.BaseScore
+
+	for _, asw := range scale.Answers {
+		for i := 0; i < len(asw); i += 2 {
+			if i+1 < len(asw) {
+				question := int(asw[i].(float64))
+				answer := asw[i+1].(bool)
+
+				if answers[question-1] == answer {
+					if len(asw)%2 == 1 {
+						rawScore += int32(asw[len(asw)-1].(float64))
+					} else {
+						rawScore++
+					}
+				}
+			}
+		}
+
+	}
+
+	for _, sbs := range scale.SubScales {
+		err := grade(answers, sbs, sex, results)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	var finalScore int32
+
+	if sex == enums.Sexes.MALE {
+		if len(scale.TScores.Male) > 0 {
+			finalScore = calculateTScore(rawScore, scale, sex, results)
+		} else {
+			finalScore = rawScore
+		}
+	} else {
+		if len(scale.TScores.Female) > 0 {
+			finalScore = calculateTScore(rawScore, scale, sex, results)
+		} else {
+			finalScore = rawScore
+		}
+	}
+
+	var purpose string
+	if len(scale.Text) > 0 {
+		purpose = scale.Text
+	} else if len(scale.Comment) > 0 {
+		purpose = scale.Comment
+	} else {
+		purpose = "N/A"
+	}
+
+	results.Categories[len(results.Categories)-1].Scales = append(results.Categories[len(results.Categories)-1].Scales, ScaleResult{ScaleName: scale.Name, ScaleDescription: scale.Title, ScalePurpose: purpose, Score: finalScore})
+
+	return nil
+}
+
+func calculateTScore(rawScore int32, scale Scale, sex enums.Sex, results *MMPIResults) int32 {
+	var tScores []int32
+
+	if sex == enums.Sexes.MALE {
+		tScores = scale.TScores.Male
+	} else {
+		tScores = scale.TScores.Female
+	}
+
+	if scale.KCorrection > 0.0 {
+		var K float32
+		var err error
+		for _, ct := range results.Categories {
+			for _, sr := range ct.Scales {
+				if sr.ScaleName == "K" {
+					K = float32(sr.Score)
+					err = nil
+					break
+				}
+				err = fmt.Errorf("no indications")
+			}
+		}
+		if err != nil {
+			K = 1 * scale.KCorrection
+		}
+
+		kScore := K + float32(rawScore)
+
+		rawScore = int32(math.Floor(float64(kScore) + 0.5))
+	}
+
+	if sex == "male" {
+		rawScore -= scale.ScoreOffsets.Male
+	} else {
+		rawScore -= scale.ScoreOffsets.Female
+	}
+
+	return tScores[int(math.Max(0, math.Min(float64(rawScore), float64(len(tScores)-1))))]
+
+}
+
+func (cr *MMPICategoryResult) deriveIndications(scalesData []MMPIScale, currentResults *MMPIResults) {
+	var indres []string = make([]string, 0)
+
+	for _, sr := range cr.Scales {
+		var indications Indications
+
+		for _, category := range scalesData {
+			for _, item := range category.Items {
+				if item.Name == sr.ScaleName {
+					indications = item.Indications
+					break
+				}
+
+			}
+		}
+
+		var F int32 = 0
+		var VRIN int32 = 0
+		var TRIN int32 = 0
+		for _, ct := range currentResults.Categories {
+			for _, sv := range ct.Scales {
+				if sv.ScaleName == "F" {
+					F = sr.Score
+
+				}
+
+				if sv.ScaleName == "VRIN" {
+					VRIN = sr.Score
+
+				}
+
+				if sv.ScaleName == "TRIN" {
+					TRIN = sr.Score
+
+				}
+			}
+		}
+
+		switch sr.ScaleName {
+		case "VRIN":
+			if sr.Score >= 80 {
+				indres = append(indres, indications.VRIN__80...)
+			}
+
+			if sr.Score < 40 {
+				indres = append(indres, indications.VRIN_40...)
+			}
+
+		case "TRIN":
+			if sr.Score <= -80 || sr.Score >= 80 {
+				indres = append(indres, indications.TRIN___80____TRIN__80...)
+			}
+
+		case "Hs":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Hs__75...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 74 {
+				indres = append(indres, indications.Five5__Hs__74...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__Hs__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Hs__64...)
+			}
+
+		case "Fb":
+			if sr.Score > F+20 {
+				indres = append(indres, indications.Fb_F_20...)
+			}
+
+		case "Fp":
+			if sr.Score >= 100 && VRIN < 70 && TRIN > 70 {
+				indres = append(indres, indications.Fp__100____VRIN_70____TRIN_70)
+			}
+
+		case "D":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.D__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__D__74...)
+			}
+
+		case "Hy":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Hy__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__Hy__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Hy__64...)
+			}
+
+		case "Pd":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Pd__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__Pd__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Pd__64...)
+			}
+
+		case "Mf":
+			if sr.Score >= 65 {
+				indres = append(indres, indications.Mf__65...)
+			}
+
+			if sr.Score >= 45 && sr.Score <= 64 {
+				indres = append(indres, indications.Four5__Mf__64...)
+			}
+
+			if sr.Score < 45 {
+				indres = append(indres, indications.Mf_45...)
+			}
+
+		case "Pa":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Pa__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__Pa__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Pa__64...)
+			}
+
+		case "Pt":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Pt__75...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Pt__64...)
+			}
+
+		case "Sc":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Sc__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Six5__Sc__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Five5__Sc__64...)
+			}
+
+		case "Ma":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Ma__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Ma__65__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Ma__55__64...)
+			}
+
+		case "Si":
+			if sr.Score >= 75 {
+				indres = append(indres, indications.Si__75...)
+			}
+
+			if sr.Score >= 65 && sr.Score <= 74 {
+				indres = append(indres, indications.Si__65__74...)
+			}
+
+			if sr.Score >= 55 && sr.Score <= 64 {
+				indres = append(indres, indications.Si__55__64...)
+			}
+
+			if sr.Score < 45 {
+				indres = append(indres, indications.Si_45...)
+			}
+
+		}
+	}
+
+	if len(indres) > 0 {
+		cr.DerivedIndications = append(cr.DerivedIndications, indres...)
+	} else {
+		cr.DerivedIndications = append(cr.DerivedIndications, "No particular indications")
+	}
+
 }
 
 // ---------------------------------------------------------------------

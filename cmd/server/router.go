@@ -172,9 +172,22 @@ Sitemap: %s/sitemap.xml
 	web.PUT("/patients/:id", controllers.UpdatePatient(), am.AuthMiddleware())
 	web.DELETE("/patients/:id", controllers.DeletePatient(), am.AuthMiddleware())
 	web.GET("/patients/search", controllers.SearchPatients(), am.AuthMiddleware())
+	web.GET("/patients/pick", controllers.PickPatient(), am.AuthMiddleware())
 
-	web.GET("/assignments", controllers.Assignments(), am.AuthMiddleware())
-	web.POST("/assignments", controllers.Assign(), am.AuthMiddleware())
+	web.GET("/examinations", controllers.Examinations(), am.AuthMiddleware())
+	web.POST("/examinations", controllers.Assign(), am.AuthMiddleware())
+	web.DELETE("/examinations/:id", controllers.DeleteExamination(), am.AuthMiddleware())
+
+	web.GET("/examinating/:id", controllers.StartExamination())
+	web.GET("/success", controllers.ExaminationSuccess())
+	web.POST("/examinating/asq/:id", controllers.AsqCalc())
+	web.POST("/examinating/bai/:id", controllers.BaiCalc())
+	web.POST("/examinating/bdi/:id", controllers.BdiCalc())
+	web.POST("/examinating/p3/:id", controllers.P3Calc())
+	web.POST("/examinating/dass42/:id", controllers.DASS42Calc())
+	web.POST("/examinating/bdi2/:id", controllers.BDI2Calc())
+	web.POST("/examinating/ptsd/:id", controllers.PTSDCalc())
+	web.POST("/examinating/mmpi2/:id", controllers.MMPICalc())
 
 	web.GET("/settings", controllers.Settings(""), am.AuthMiddleware())
 	web.GET("/settings/profile", controllers.Settings("profile"), am.AuthMiddleware())
@@ -242,7 +255,6 @@ func serverErrorHandler(err error, c echo.Context) {
 		// Prepare data for rendering the error page (HTML)
 		data := config.GetDefaultSite(c.Request())
 		data.Nonce = c.Get("nonce").(string)
-		data.CSRF = c.Get("csrf").(string)
 
 		var title string
 		switch code {

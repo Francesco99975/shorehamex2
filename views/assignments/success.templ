@@ -1,0 +1,36 @@
+package assignments
+
+import "github.com/Francesco99975/shorehamex2/views/layouts"
+import "github.com/Francesco99975/shorehamex2/internal/config"
+
+templ ExaminationSuccess(site config.Site) {
+	@layouts.Base(site) {
+		<main class="flex-1 grid place-items-center p-4 sm:p-6">
+			<section
+				class="w-full max-w-md bg-panel border border-border rounded-2xl shadow-md p-8 flex flex-col items-center gap-6 text-center"
+				aria-labelledby="exam-success-title"
+			>
+				<div class="w-16 h-16 rounded-full bg-success/10 text-success grid place-content-center" aria-hidden="true">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M20 6 9 17l-5-5"></path>
+					</svg>
+				</div>
+				<div class="flex flex-col gap-2">
+					<h1 id="exam-success-title" class="text-2xl font-semibold text-fg text-balance">
+						Examination complete
+					</h1>
+					<p class="text-sm text-muted leading-relaxed text-pretty">
+						Thank you. Your answers have been submitted securely and sent to your clinician for review.
+					</p>
+				</div>
+				<div class="w-full rounded-xl bg-std border border-border p-4 text-left flex flex-col gap-1">
+					<p class="text-sm font-medium text-fg">What happens next?</p>
+					<p class="text-sm text-muted leading-relaxed">
+						Your clinician will go over the results and discuss them with you at your next appointment. You don&apos;t need to do anything else.
+					</p>
+				</div>
+				<p class="text-xs text-muted">You can now safely close this window.</p>
+			</section>
+		</main>
+	}
+}

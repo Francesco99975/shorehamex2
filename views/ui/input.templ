@@ -359,6 +359,20 @@ templ Textarea(p TextareaProps) {
 }
 
 // SearchProps — search field with a leading magnifier and HTMX live-search hooks.
+// In BOTH modes the visible search box is named {Name}, so the typed text is the
+// query parameter sent to GetURL (e.g. GET {GetURL}?{Name}=ada).
+//
+// Two modes:
+//   - ExternalTarget:true  → pure live-search driver; results are swapped into a
+//     TargetID that lives elsewhere on the page (unchanged).
+//   - ExternalTarget:false → internal PICKER mode. Results appear in a dropdown
+//     and the user picks exactly one. The picked item's ID is written to a
+//     dedicated hidden <input name="search_pick" id="search_pick"> so THAT is the
+//     value the form submits, and a chip shows the current pick.
+//
+// Picker server contract: GetURL returns a fragment of @SearchResultsItem rows
+// (each carries data-value=ID and data-label=Name); render @SearchNoResults when
+// there are no matches.
 type SearchProps struct {
 	Name           string
 	Label          string
@@ -369,55 +383,185 @@ type SearchProps struct {
 	ExternalTarget bool
 	PushURL        bool
 	Include        string
-	Attrs          templ.Attributes
+	// Value / Display pre-select an item (edit forms): Value seeds the hidden
+	// search_pick value, Display seeds the visible chip label.
+	Value   string
+	Display string
+	Attrs   templ.Attributes
 }
 
-// Search is a debounced live-search input.
+// Search is a debounced live-search input. With a GetURL and ExternalTarget:false
+// it becomes a single-pick combobox (see searchPicker); otherwise it drives an
+// external target (ExternalTarget:true) or is a plain input (no GetURL).
 templ Search(p SearchProps) {
-	<div>
+	if p.GetURL != "" && !p.ExternalTarget {
+		@searchPicker(p)
+	} else {
+		<div>
+			if p.Label != "" {
+				@FieldLabel(p.Label, "")
+			}
+			<div class="relative">
+				<svg class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="11" cy="11" r="7"></circle>
+					<line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+				</svg>
+				if p.TargetID != "" && p.GetURL != "" {
+					<input
+						type="search"
+						id={ nonEmpty(p.Name, "q") }
+						name={ nonEmpty(p.Name, "q") }
+						placeholder={ nonEmpty(p.Placeholder, "Search…") }
+						class="field pl-9"
+						hx-get={ p.GetURL }
+						hx-trigger={ "keyup changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
+						hx-target={ "#" + p.TargetID }
+						hx-swap="innerHTML"
+						if p.PushURL {
+							hx-push-url="true"
+						}
+						if p.Include != "" {
+							hx-include={ p.Include }
+						}
+						{ p.Attrs... }
+					/>
+				} else {
+					<input
+						type="search"
+						id={ nonEmpty(p.Name, "q") }
+						name={ nonEmpty(p.Name, "q") }
+						placeholder={ nonEmpty(p.Placeholder, "Search…") }
+						class="field pl-9"
+						{ p.Attrs... }
+					/>
+				}
+			</div>
+			{ children... }
+		</div>
+	}
+}
+
+// searchPicker is the internal single-pick combobox. The visible box is named
+// {Name} so its text is the query param sent to GetURL. Picking a result writes
+// the item's ID into the dedicated hidden <input name="search_pick"> (the value
+// the form submits) and surfaces a chip so the current pick is always visible.
+templ searchPicker(p SearchProps) {
+	{{ name := nonEmpty(p.Name, "q") }}
+	{{ pickName := "picked_" + name }}
+	{{ resultsID := nonEmpty(p.TargetID, name+"-results") }}
+	{{/* Delegated picker state: onPick reads data-value(ID)/data-label(Name) off
+   the clicked row; clear() resets. Seeded from Value/Display for edit forms. */
+	}}
+	{{xData := fmt.Sprintf(
+	"{ open:false, value:%s, picked:%s,"+
+		" onPick(e){ const el=e.target.closest('[data-value]'); if(!el) return; e.preventDefault();"+
+		" this.value=el.dataset.value; this.picked=el.dataset.label||el.textContent.trim(); this.open=false; },"+
+		" clear(){ this.value=''; this.picked=''; } }",
+	jsStr(p.Value), jsStr(p.Display))
+	}}
+	<div x-data={ xData } @keydown.escape="open = false" @click.away="open = false" class="relative">
 		if p.Label != "" {
 			@FieldLabel(p.Label, "")
 		}
+		<!-- The value the form actually submits: the picked item's ID. -->
+		<input type="hidden" name={ pickName } id={ pickName } x-model="value" { p.Attrs... }/>
 		<div class="relative">
 			<svg class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 				<circle cx="11" cy="11" r="7"></circle>
 				<line x1="21" y1="21" x2="16.5" y2="16.5"></line>
 			</svg>
-			if p.TargetID != "" && p.GetURL != "" {
-				<input
-					type="search"
-					id={ nonEmpty(p.Name, "q") }
-					name={ nonEmpty(p.Name, "q") }
-					placeholder={ nonEmpty(p.Placeholder, "Search…") }
-					class="field pl-9"
-					hx-get={ p.GetURL }
-					hx-trigger={ "keyup changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
-					hx-target={ "#" + p.TargetID }
-					hx-swap="innerHTML"
-					if p.PushURL {
-						hx-push-url="true"
-					}
-					if p.Include != "" {
-						hx-include={ p.Include }
-					}
-					{ p.Attrs... }
-				/>
-			} else {
-				<input
-					type="search"
-					id={ nonEmpty(p.Name, "q") }
-					name={ nonEmpty(p.Name, "q") }
-					placeholder={ nonEmpty(p.Placeholder, "Search…") }
-					class="field pl-9"
-					{ p.Attrs... }
-				/>
-			}
+			<input
+				type="search"
+				id={ name }
+				name={ name }
+				x-ref="box"
+				autocomplete="off"
+				role="combobox"
+				aria-autocomplete="list"
+				:aria-expanded="open"
+				placeholder={ nonEmpty(p.Placeholder, "Search…") }
+				class="field pl-9"
+				@focus="open = true"
+				@input="open = true"
+				hx-get={ p.GetURL }
+				hx-trigger={ "keyup changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
+				hx-target={ "#" + resultsID }
+				hx-swap="innerHTML"
+				if p.Include != "" {
+					hx-include={ p.Include }
+				}
+			/>
 		</div>
-		if p.TargetID != "" && !p.ExternalTarget {
-			<div id={ p.TargetID } class="mt-2 text-sm text-muted"></div>
-		}
+		<!-- Results dropdown: HTMX fills #resultsID; a delegated click resolves the pick. -->
+		<div
+			x-show="open"
+			x-cloak
+			x-transition.opacity
+			@click="onPick($event)"
+			class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-md"
+		>
+			<div id={ resultsID } class="max-h-64 overflow-auto py-1 text-sm"></div>
+		</div>
+		<!-- Current pick, always visible while something is selected. -->
+		<div x-show="value" x-cloak class="mt-2 flex items-center gap-2">
+			<span class="inline-flex max-w-full items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm text-fg">
+				<svg class="shrink-0 text-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+					<polyline points="20 6 9 17 4 12"></polyline>
+				</svg>
+				<span class="truncate" x-text="picked"></span>
+				<button
+					type="button"
+					@click="clear(); $refs.box.focus()"
+					class="grid h-4 w-4 shrink-0 place-items-center rounded-full text-muted hover:bg-muted/25 hover:text-fg"
+					aria-label="Clear selection"
+				>
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</button>
+			</span>
+		</div>
 		{ children... }
 	</div>
+}
+
+// SearchResultsItemProps is one row in a picker's results fragment. ID is the
+// canonical value the form will submit; Name is the human-readable display text.
+type SearchResultsItemProps struct {
+	Name string
+	ID   string
+}
+
+// SearchResultsItem renders one clickable result row. It carries data-value(ID)
+// and data-label(Name) that the picker's delegated click handler reads. Generic
+// by design: use it for any entity — just map your record to {Name, ID}.
+templ SearchResultsItem(p SearchResultsItemProps) {
+	<button
+		type="button"
+		data-value={ p.ID }
+		data-label={ p.Name }
+		class="flex w-full items-center gap-2 px-3 py-2 text-left text-fg transition-colors hover:bg-muted/15 focus:bg-muted/15 focus:outline-none"
+	>
+		<span class="truncate">{ p.Name }</span>
+	</button>
+}
+
+// SearchNoResults is the empty-state row for a picker results fragment.
+templ SearchNoResults() {
+	<div class="px-3 py-6 text-center text-sm text-muted">No matches found</div>
+}
+
+// SearchResults renders a picker's result fragment: one row per item, or the
+// empty state. This whole fragment is what your HTMX handler writes back.
+templ SearchResults(items []SearchResultsItemProps) {
+	if len(items) == 0 {
+		@SearchNoResults()
+	} else {
+		for _, it := range items {
+			@SearchResultsItem(it)
+		}
+	}
 }
 
 // NumberStepperProps — bounded integer input with − / + buttons, Alpine-driven.

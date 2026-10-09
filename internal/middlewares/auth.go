@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -41,6 +42,11 @@ func (m *AuthMiddlewares) AuthMiddleware() echo.MiddlewareFunc {
 					return c.Redirect(http.StatusSeeOther, "/auth")
 				}
 				return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+			}
+
+			err = m.repo.SetActorID(c.Request().Context(), auser.ID)
+			if err != nil {
+				return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to set actor id: %w", err))
 			}
 
 			auth.TouchSession(c.Request(), m.repo, auser.SessionID, auser.LastActivityAt)

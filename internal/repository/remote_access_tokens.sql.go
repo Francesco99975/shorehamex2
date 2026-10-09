@@ -19,22 +19,15 @@ WHERE token_hash = $1
   AND used_at IS NULL
   AND NOT revoked
   AND expires_at > NOW()
-RETURNING id, assignment_id, token_hash, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at
+RETURNING id, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at, token_encrypted, examination_id, token_hash
 `
 
-// Patient-facing: marks the token used at the moment they actually
-// start/submit their assessment. Re-checks validity in the same
-// statement (not just relying on a prior GetRemoteAccessTokenByHash
-// call) to close the race where two requests redeem the same link at
-// once — only one can win. Returns zero rows if it was already
-// used/revoked/expired between the two calls.
+// Patient-facing: mark used. Lookup by hash again to close races.
 func (q *Queries) ConsumeRemoteAccessToken(ctx context.Context, tokenHash string) (*RemoteAccessToken, error) {
 	row := q.db.QueryRow(ctx, consumeRemoteAccessToken, tokenHash)
 	var i RemoteAccessToken
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
-		&i.TokenHash,
 		&i.SentToEmail,
 		&i.SentAt,
 		&i.ResendCount,
@@ -42,35 +35,38 @@ func (q *Queries) ConsumeRemoteAccessToken(ctx context.Context, tokenHash string
 		&i.UsedAt,
 		&i.Revoked,
 		&i.CreatedAt,
+		&i.TokenEncrypted,
+		&i.ExaminationID,
+		&i.TokenHash,
 	)
 	return &i, err
 }
 
 const getActiveRemoteAccessToken = `-- name: GetActiveRemoteAccessToken :one
-SELECT t.id, t.assignment_id, t.token_hash, t.sent_to_email, t.sent_at, t.resend_count, t.expires_at, t.used_at, t.revoked, t.created_at FROM remote_access_tokens t
-JOIN assignments a ON a.id = t.assignment_id
-JOIN patients p ON p.id = a.patient_id
-WHERE t.assignment_id = $1
+SELECT t.id, t.sent_to_email, t.sent_at, t.resend_count, t.expires_at, t.used_at, t.revoked, t.created_at, t.token_encrypted, t.examination_id, t.token_hash FROM remote_access_tokens t
+JOIN examinations e ON e.id = t.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE t.examination_id = $1
   AND t.used_at IS NULL
   AND NOT t.revoked
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type GetActiveRemoteAccessTokenParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+	ExaminationID uuid.UUID  `json:"examination_id"`
+	ViewerID      *uuid.UUID `json:"viewer_id"`
 }
 
-// The currently usable token for an assignment, if any — backs a "link
-// sent 2 days ago, expires in 5 days" display, and lets the app decide
-// whether a "Send" or "Resend" action is appropriate.
+// Staff: show/copy/resend. Decrypt token_encrypted in the app.
 func (q *Queries) GetActiveRemoteAccessToken(ctx context.Context, arg GetActiveRemoteAccessTokenParams) (*RemoteAccessToken, error) {
-	row := q.db.QueryRow(ctx, getActiveRemoteAccessToken, arg.AssignmentID, arg.ViewerID)
+	row := q.db.QueryRow(ctx, getActiveRemoteAccessToken, arg.ExaminationID, arg.ViewerID)
 	var i RemoteAccessToken
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
-		&i.TokenHash,
 		&i.SentToEmail,
 		&i.SentAt,
 		&i.ResendCount,
@@ -78,31 +74,28 @@ func (q *Queries) GetActiveRemoteAccessToken(ctx context.Context, arg GetActiveR
 		&i.UsedAt,
 		&i.Revoked,
 		&i.CreatedAt,
+		&i.TokenEncrypted,
+		&i.ExaminationID,
+		&i.TokenHash,
 	)
 	return &i, err
 }
 
 const getRemoteAccessTokenByHash = `-- name: GetRemoteAccessTokenByHash :one
-SELECT id, assignment_id, token_hash, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at FROM remote_access_tokens
+SELECT id, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at, token_encrypted, examination_id, token_hash FROM remote_access_tokens
 WHERE token_hash = $1
   AND used_at IS NULL
   AND NOT revoked
   AND expires_at > NOW()
 `
 
-// Patient-facing: looks up the token the patient's link decoded to
-// (already hashed by the app before this query runs — never look up by
-// raw token). No viewer_id — see header comment. Only returns a row if
-// the token is actually still usable; an expired/used/revoked token
-// simply doesn't match, which the app should treat as "this link is no
-// longer valid" without distinguishing why.
+// Patient-facing: app hashes the URL token, then looks up by hash.
+// No viewer_id.
 func (q *Queries) GetRemoteAccessTokenByHash(ctx context.Context, tokenHash string) (*RemoteAccessToken, error) {
 	row := q.db.QueryRow(ctx, getRemoteAccessTokenByHash, tokenHash)
 	var i RemoteAccessToken
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
-		&i.TokenHash,
 		&i.SentToEmail,
 		&i.SentAt,
 		&i.ResendCount,
@@ -110,28 +103,33 @@ func (q *Queries) GetRemoteAccessTokenByHash(ctx context.Context, tokenHash stri
 		&i.UsedAt,
 		&i.Revoked,
 		&i.CreatedAt,
+		&i.TokenEncrypted,
+		&i.ExaminationID,
+		&i.TokenHash,
 	)
 	return &i, err
 }
 
-const listRemoteAccessTokensForAssignment = `-- name: ListRemoteAccessTokensForAssignment :many
-SELECT t.id, t.assignment_id, t.token_hash, t.sent_to_email, t.sent_at, t.resend_count, t.expires_at, t.used_at, t.revoked, t.created_at FROM remote_access_tokens t
-JOIN assignments a ON a.id = t.assignment_id
-JOIN patients p ON p.id = a.patient_id
-WHERE t.assignment_id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+const listRemoteAccessTokensForExamination = `-- name: ListRemoteAccessTokensForExamination :many
+SELECT t.id, t.sent_to_email, t.sent_at, t.resend_count, t.expires_at, t.used_at, t.revoked, t.created_at, t.token_encrypted, t.examination_id, t.token_hash FROM remote_access_tokens t
+JOIN examinations e ON e.id = t.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE t.examination_id = $1
+  AND (
+      $2::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 ORDER BY t.sent_at DESC
 `
 
-type ListRemoteAccessTokensForAssignmentParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+type ListRemoteAccessTokensForExaminationParams struct {
+	ExaminationID uuid.UUID  `json:"examination_id"`
+	ViewerID      *uuid.UUID `json:"viewer_id"`
 }
 
-// Full send/resend history for an assignment (audit trail — "link sent,
-// then resent twice, then used").
-func (q *Queries) ListRemoteAccessTokensForAssignment(ctx context.Context, arg ListRemoteAccessTokensForAssignmentParams) ([]*RemoteAccessToken, error) {
-	rows, err := q.db.Query(ctx, listRemoteAccessTokensForAssignment, arg.AssignmentID, arg.ViewerID)
+func (q *Queries) ListRemoteAccessTokensForExamination(ctx context.Context, arg ListRemoteAccessTokensForExaminationParams) ([]*RemoteAccessToken, error) {
+	rows, err := q.db.Query(ctx, listRemoteAccessTokensForExamination, arg.ExaminationID, arg.ViewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +139,6 @@ func (q *Queries) ListRemoteAccessTokensForAssignment(ctx context.Context, arg L
 		var i RemoteAccessToken
 		if err := rows.Scan(
 			&i.ID,
-			&i.AssignmentID,
-			&i.TokenHash,
 			&i.SentToEmail,
 			&i.SentAt,
 			&i.ResendCount,
@@ -150,6 +146,9 @@ func (q *Queries) ListRemoteAccessTokensForAssignment(ctx context.Context, arg L
 			&i.UsedAt,
 			&i.Revoked,
 			&i.CreatedAt,
+			&i.TokenEncrypted,
+			&i.ExaminationID,
+			&i.TokenHash,
 		); err != nil {
 			return nil, err
 		}
@@ -165,55 +164,71 @@ const resendRemoteAccessToken = `-- name: ResendRemoteAccessToken :one
 WITH revoked AS (
     UPDATE remote_access_tokens t
     SET revoked = TRUE
-    FROM assignments a
-    JOIN patients p ON p.id = a.patient_id
-    WHERE t.assignment_id = a.id
-      AND t.assignment_id = $5
+    FROM examinations e
+    JOIN patients p ON p.id = e.patient_id
+    WHERE t.examination_id = e.id
+      AND t.examination_id = $6
       AND t.used_at IS NULL
       AND NOT t.revoked
-      AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($6)
+      AND (
+          $7::uuid IS NULL
+          OR (e.is_developer_data OR p.is_developer_data)
+              = is_developer_user($7::uuid)
+      )
     RETURNING t.resend_count
 )
 INSERT INTO remote_access_tokens (
-    id, assignment_id, token_hash, sent_to_email, expires_at, resend_count
+    id,
+    examination_id,
+    token_hash,
+    token_encrypted,
+    sent_to_email,
+    expires_at,
+    resend_count
 )
-SELECT $1, a.id, $2, $3, $4,
-       COALESCE((SELECT resend_count FROM revoked), -1) + 1
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-WHERE a.id = $5
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($6)
-RETURNING id, assignment_id, token_hash, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at
+SELECT
+    $1,
+    e.id,
+    $2,
+    $3,
+    $4,
+    $5,
+    COALESCE((SELECT resend_count FROM revoked), -1) + 1
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = $6
+  AND (
+      $7::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($7::uuid)
+  )
+RETURNING id, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at, token_encrypted, examination_id, token_hash
 `
 
 type ResendRemoteAccessTokenParams struct {
-	ID           uuid.UUID          `json:"id"`
-	TokenHash    string             `json:"token_hash"`
-	SentToEmail  string             `json:"sent_to_email"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	AssignmentID uuid.UUID          `json:"assignment_id"`
-	ViewerID     uuid.UUID          `json:"viewer_id"`
+	ID             uuid.UUID          `json:"id"`
+	TokenHash      string             `json:"token_hash"`
+	TokenEncrypted []byte             `json:"token_encrypted"`
+	SentToEmail    string             `json:"sent_to_email"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	ExaminationID  uuid.UUID          `json:"examination_id"`
+	ViewerID       *uuid.UUID         `json:"viewer_id"`
 }
 
-// "Resend link" action: atomically revokes the current active token (if
-// any) and issues a new one, carrying resend_count forward + 1. If
-// there's no active token to revoke (e.g. it already expired), this
-// still issues a fresh one at resend_count 0 — a resend on an already-
-// lapsed link is effectively a new send.
+// Revoke active token (if any) and insert a new one (new hash + new ciphertext).
 func (q *Queries) ResendRemoteAccessToken(ctx context.Context, arg ResendRemoteAccessTokenParams) (*RemoteAccessToken, error) {
 	row := q.db.QueryRow(ctx, resendRemoteAccessToken,
 		arg.ID,
 		arg.TokenHash,
+		arg.TokenEncrypted,
 		arg.SentToEmail,
 		arg.ExpiresAt,
-		arg.AssignmentID,
+		arg.ExaminationID,
 		arg.ViewerID,
 	)
 	var i RemoteAccessToken
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
-		&i.TokenHash,
 		&i.SentToEmail,
 		&i.SentAt,
 		&i.ResendCount,
@@ -221,6 +236,9 @@ func (q *Queries) ResendRemoteAccessToken(ctx context.Context, arg ResendRemoteA
 		&i.UsedAt,
 		&i.Revoked,
 		&i.CreatedAt,
+		&i.TokenEncrypted,
+		&i.ExaminationID,
+		&i.TokenHash,
 	)
 	return &i, err
 }
@@ -228,97 +246,89 @@ func (q *Queries) ResendRemoteAccessToken(ctx context.Context, arg ResendRemoteA
 const revokeActiveRemoteAccessToken = `-- name: RevokeActiveRemoteAccessToken :exec
 UPDATE remote_access_tokens t
 SET revoked = TRUE
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-WHERE t.assignment_id = a.id
-  AND t.assignment_id = $1
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE t.examination_id = e.id
+  AND t.examination_id = $1
   AND t.used_at IS NULL
   AND NOT t.revoked
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type RevokeActiveRemoteAccessTokenParams struct {
-	AssignmentID uuid.UUID `json:"assignment_id"`
-	ViewerID     uuid.UUID `json:"viewer_id"`
+	ExaminationID uuid.UUID  `json:"examination_id"`
+	ViewerID      *uuid.UUID `json:"viewer_id"`
 }
 
-// Standalone "invalidate this link" action (e.g. patient reports the
-// email was compromised), independent of sending a replacement.
 func (q *Queries) RevokeActiveRemoteAccessToken(ctx context.Context, arg RevokeActiveRemoteAccessTokenParams) error {
-	_, err := q.db.Exec(ctx, revokeActiveRemoteAccessToken, arg.AssignmentID, arg.ViewerID)
+	_, err := q.db.Exec(ctx, revokeActiveRemoteAccessToken, arg.ExaminationID, arg.ViewerID)
 	return err
 }
 
 const sendRemoteAccessToken = `-- name: SendRemoteAccessToken :one
 
 INSERT INTO remote_access_tokens (
-    id, assignment_id, token_hash, sent_to_email, expires_at
+    id,
+    examination_id,
+    token_hash,
+    token_encrypted,
+    sent_to_email,
+    expires_at
 )
-SELECT $1, a.id, $2, $3, $4
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-WHERE a.id = $5
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($6)
-RETURNING id, assignment_id, token_hash, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at
+SELECT
+    $1,
+    e.id,
+    $2,
+    $3,
+    $4,
+    $5
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = $6
+  AND (
+      $7::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($7::uuid)
+  )
+RETURNING id, sent_to_email, sent_at, resend_count, expires_at, used_at, revoked, created_at, token_encrypted, examination_id, token_hash
 `
 
 type SendRemoteAccessTokenParams struct {
-	ID           uuid.UUID          `json:"id"`
-	TokenHash    string             `json:"token_hash"`
-	SentToEmail  string             `json:"sent_to_email"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	AssignmentID uuid.UUID          `json:"assignment_id"`
-	ViewerID     uuid.UUID          `json:"viewer_id"`
+	ID             uuid.UUID          `json:"id"`
+	TokenHash      string             `json:"token_hash"`
+	TokenEncrypted []byte             `json:"token_encrypted"`
+	SentToEmail    string             `json:"sent_to_email"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	ExaminationID  uuid.UUID          `json:"examination_id"`
+	ViewerID       *uuid.UUID         `json:"viewer_id"`
 }
 
 // remote_access_tokens.sql
 //
-// sqlc queries for the remote_access_tokens table.
+// Dual storage:
 //
-// Two different access models in this one file:
+//	token_hash      → patient auth (lookup by hash of presented token)
+//	token_encrypted → staff recovery (decrypt to resend the same link)
 //
-//  1. Staff-facing queries (send/resend/revoke/list/get-active) are used
-//     by an authenticated clinician or developer through the app, so
-//     they carry the same partition rule as patients.sql/assignments.sql
-//     — inherited via join, since this table has no is_developer_data
-//     column of its own:
-//     (a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
-//
-//  2. Patient-facing queries (GetRemoteAccessTokenByHash,
-//     ConsumeRemoteAccessToken) are used by a patient who followed a
-//     secret emailed link — there's no logged-in app user/role in that
-//     flow at all, so there's deliberately NO viewer_id or partition
-//     check on these two. Validity is entirely about the token itself
-//     (unused, unrevoked, unexpired), same idea as
-//     MarkAssignmentReadyForReview having no viewer check in
-//     assignments.sql — no human "viewer" exists in that code path to
-//     check against.
-//
-// Only one usable ("active") token can exist per assignment at a time —
-// enforced by idx_remote_access_tokens_active (a partial unique index
-// on assignment_id WHERE used_at IS NULL AND NOT revoked). That's why
-// ResendRemoteAccessToken revokes the current active token and inserts
-// the replacement in one atomic statement (a writable CTE) — doing it
-// as two round trips would risk a moment where either both or neither
-// token is active.
-// Initial "Send link" action — there should be no existing active token
-// yet. If one exists, the unique partial index rejects this with a
-// constraint violation; the app should have already checked via
-// GetActiveRemoteAccessToken and called ResendRemoteAccessToken instead.
+// Tokens belong to an examination (one active link per delivery unit).
+// Partial unique index: at most one active token per examination.
 func (q *Queries) SendRemoteAccessToken(ctx context.Context, arg SendRemoteAccessTokenParams) (*RemoteAccessToken, error) {
 	row := q.db.QueryRow(ctx, sendRemoteAccessToken,
 		arg.ID,
 		arg.TokenHash,
+		arg.TokenEncrypted,
 		arg.SentToEmail,
 		arg.ExpiresAt,
-		arg.AssignmentID,
+		arg.ExaminationID,
 		arg.ViewerID,
 	)
 	var i RemoteAccessToken
 	err := row.Scan(
 		&i.ID,
-		&i.AssignmentID,
-		&i.TokenHash,
 		&i.SentToEmail,
 		&i.SentAt,
 		&i.ResendCount,
@@ -326,6 +336,9 @@ func (q *Queries) SendRemoteAccessToken(ctx context.Context, arg SendRemoteAcces
 		&i.UsedAt,
 		&i.Revoked,
 		&i.CreatedAt,
+		&i.TokenEncrypted,
+		&i.ExaminationID,
+		&i.TokenHash,
 	)
 	return &i, err
 }

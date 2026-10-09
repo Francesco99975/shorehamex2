@@ -107,6 +107,33 @@ SET responses = responses || sqlc.arg(new_responses)::jsonb
 WHERE assignment_id = $1
 RETURNING *;
 
+
+-- name: UpdateAssignmentResponsesMMPI :one
+-- Appends newly-answered items onto the "answers" array inside responses.
+-- Fires mark_assignment_started_on_response as a side effect.
+UPDATE assignment_results
+SET responses = jsonb_set(
+    COALESCE(responses, '{}'::jsonb),
+    '{answers}',
+    COALESCE(responses->'answers', '[]'::jsonb)
+        || COALESCE(sqlc.arg(new_responses)::jsonb -> 'answers', '[]'::jsonb)
+)
+WHERE assignment_id = $1
+RETURNING *;
+
+-- name: UpdateAssignmentDuration :one
+-- Updates the duration_seconds field for an assignment result.
+UPDATE assignment_results
+SET duration_seconds = $2
+WHERE assignment_id = $1
+RETURNING *;
+
+-- name: IncrementAssignmentDuration :one
+UPDATE assignment_results
+SET duration_seconds = COALESCE(duration_seconds, 0) + $2
+WHERE assignment_id = $1
+RETURNING *;
+
 -- name: FinalizeAssignmentResultScoring :one
 -- Called by the scoring engine once every item is answered, before it
 -- writes the engine-specific rows below. Generic to both SUM_BANDED and
@@ -126,18 +153,18 @@ RETURNING *;
 -- results use CreateMMPIScales/CreateMMPIIndications instead. No
 -- viewer_id — see header comment.
 INSERT INTO assignment_sum_band_results (
-    assignment_result_id, headline_score, numeric_score, scale_label,
+    assignment_result_id, subscale_code, headline_score, numeric_score, scale_label,
     severity_label, interpretation_summary
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
 RETURNING *;
 
--- name: GetSumBandResultForAssignment :one
+-- name: GetSumBandResultsForAssignment :many
 -- The single most useful read for rendering a SUM_BANDED result screen:
 -- joins straight from assignment_id to the envelope and the display
 -- fields, no need to look up assignment_result_id first.
-SELECT ar.*, sbr.headline_score, sbr.numeric_score, sbr.scale_label,
+SELECT ar.*, sbr.headline_score, sbr.subscale_code, sbr.numeric_score, sbr.scale_label,
        sbr.severity_label, sbr.interpretation_summary
 FROM assignment_results ar
 JOIN assignment_sum_band_results sbr ON sbr.assignment_result_id = ar.id

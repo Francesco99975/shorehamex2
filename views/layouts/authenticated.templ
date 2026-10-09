@@ -46,17 +46,27 @@ templ AuthenticatedLayout(site config.Site) {
 					MaxW:     "350px",
 				}) {
 					<form
-						hx-post="/assignments"
+						id="assign-test-form"
+						hx-post="/examinations"
 						hx-swap="none"
 						{ ui.WithLoading("assign-test-loading")... }
-						@htmx:after-request="if(event.detail.successful) assignTestModal = false"
+						@htmx:after-request="
+								if(event.target === $el && event.detail.successful){
+									const list = document.querySelector('#examinations-list');
+									if (list) {
+										htmx.swap(list, event.detail.xhr.response, { swapStyle: 'beforeend' });
+									}
+									$el.reset();
+									assignTestModal = false;
+								}
+							"
 						class="p-4 space-y-4"
 					>
 						@ui.Search(ui.SearchProps{
 							Name:        "patient",
 							Placeholder: "Search patient…",
 							Label:       "Patient",
-							GetURL:      "/search/patients",
+							GetURL:      "/patients/pick",
 							DebounceMS:  300,
 							TargetID:    "patient-results",
 						})

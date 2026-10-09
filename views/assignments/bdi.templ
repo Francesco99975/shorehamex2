@@ -1,0 +1,74 @@
+package assignments
+
+import (
+	"time"
+	"strconv"
+	"github.com/Francesco99975/shorehamex2/internal/config"
+
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"github.com/Francesco99975/shorehamex2/views/components"
+)
+
+templ Bdi(site config.Site, groups [][]string, path string) {
+	@layouts.Base(site) {
+		<div id="tab-content" class="flex items-center justify-center min-h-screen w-full px-4 py-8">
+			<div class="w-full max-w-3xl">
+				@ui.Card(ui.CardProps{}) {
+					<h1 class="text-4xl font-bold text-foreground mb-2 text-center text-balance">Beck Depression Inventory</h1>
+					<p class="text-muted text-center mb-8 text-pretty">Please complete all questions</p>
+					<form
+						hx-post={ path }
+						hx-target="body"
+						hx-replace-url="true"
+						hx-indicator="#indicator"
+						class="space-y-6"
+					>
+						@components.CSRF(site.CSRF)
+						<input type="hidden" name="start" id="start" value={ time.Now().Unix() }/>
+						<div class="border-t border-border pt-6">
+							<h2 class="text-xl font-semibold text-foreground mb-6 text-pretty">
+								This questionnaire consists of 21 groups of statements. Please read each group of statements carefully, and then pick out the one statement in each group that best describes the way you have been feeling during the past two weeks, including today. Select the statement by clicking the radio button beside it.
+							</h2>
+						</div>
+						<div class="space-y-6">
+							for index, group := range groups {
+								<div class="bg-surface border border-border rounded-xl p-6 hover:border-primary hover:shadow-md transition-all duration-200">
+									<div class="flex items-center gap-3 mb-4">
+										<span class="flex items-center justify-center w-8 h-8 bg-primary/10 text-primary rounded-full text-sm font-semibold flex-shrink-0">
+											{ strconv.Itoa(index + 1) }
+										</span>
+										<span class="text-lg font-medium text-foreground">Question { strconv.Itoa(index + 1) }</span>
+									</div>
+									@MMultiRadioField(strconv.Itoa(index), "", group, 0, true)
+								</div>
+							}
+						</div>
+						<div class="pt-6 border-t border-border">
+							@ui.Button(ui.ButtonProps{
+								Variant: ui.ButtonPrimary,
+								Size:    ui.ButtonLG,
+								Type:    ui.TypeSubmit,
+								FullW:   true,
+							}) {
+								<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+								</svg>
+								Submit Questionnaire
+							}
+						</div>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ MMultiRadioField(id string, label string, options []string, adjust int, required bool) {
+	<fieldset>
+		<legend>{ label }</legend>
+		for index, option := range options {
+			@ui.RadioInput(id+strconv.Itoa(index), id, option, strconv.Itoa(index+adjust), required)
+		}
+	</fieldset>
+}

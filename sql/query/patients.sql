@@ -33,13 +33,19 @@
 -- name: GetPatient :one
 SELECT * FROM patients
 WHERE id = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id));
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  );
 
 -- name: GetPatientByMRN :one
 -- For intake lookups / duplicate-MRN checks before creating a new record.
 SELECT * FROM patients
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id));
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  );
 
 -- name: ListPatients :many
 -- Main patient directory. Alphabetical by name; swap to
@@ -47,7 +53,10 @@ WHERE mrn = $1
 -- than a directory — a judgment call, easy to flip either way.
 SELECT * FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  )
 ORDER BY full_name
 LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 
@@ -57,7 +66,10 @@ LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 SELECT * FROM patients
 WHERE is_active
   AND computed_status = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  )
 ORDER BY last_activity_at DESC NULLS LAST
 LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 
@@ -68,7 +80,10 @@ LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 -- Supports pagination via page (1-based) and limit (items per page).
 SELECT * FROM patients
 WHERE is_active
-AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+AND (
+    sqlc.narg(viewer_id)::uuid IS NULL
+    OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+)
 AND (full_name ILIKE '%' || sqlc.arg(query) || '%' OR mrn ILIKE '%' || sqlc.arg(query) || '%')
 ORDER BY full_name
 LIMIT sqlc.arg(row_limit)
@@ -80,7 +95,10 @@ OFFSET (sqlc.arg(page) - 1) * sqlc.arg(row_limit);
 -- patients are entirely outside a developer's view, by design.
 SELECT COUNT(*) FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id));
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  );
 
 -- name: CreatePatient :one
 -- is_developer_data is NOT a column here — it's stamped automatically
@@ -104,7 +122,10 @@ SET
     date_of_birth = $5,
     sex = $6
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  )
 RETURNING *;
 
 -- name: SetPatientActive :one
@@ -112,7 +133,10 @@ RETURNING *;
 UPDATE patients
 SET is_active = $2
 WHERE id = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id))
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  )
 RETURNING *;
 
 -- name: DeletePatient :exec
@@ -125,4 +149,7 @@ RETURNING *;
 -- actually the intended behavior for the ADMIN/USER side of this.
 DELETE FROM patients
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user(sqlc.arg(viewer_id));
+  AND (
+      sqlc.narg(viewer_id)::uuid IS NULL
+      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+  );

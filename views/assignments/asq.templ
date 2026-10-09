@@ -1,0 +1,81 @@
+package assignments
+
+import (
+	"time"
+	"strconv"
+
+	"github.com/Francesco99975/shorehamex2/internal/config"
+
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ Asq(site config.Site, questions []string, multi []string, path string) {
+	@layouts.Base(site) {
+		<main class="flex w-full flex-col items-center justify-start p-4 md:p-8 min-h-screen">
+			<div class="w-full max-w-3xl my-8">
+				@ui.Card(ui.CardProps{Padded: true}) {
+					<header class="mb-8">
+						<h1 class="text-3xl md:text-4xl font-bold text-foreground mb-3 text-balance">
+							Anxiety Symptoms Questionnaire
+						</h1>
+						<p class="text-muted text-sm md:text-base text-pretty">Please answer all questions honestly to help us provide better care.</p>
+					</header>
+					<form
+						id="fq"
+						class="w-full flex flex-col items-start justify-center space-y-6"
+						hx-post={ path }
+						hx-target="body"
+						hx-replace-url="true"
+						hx-indicator="#indicator"
+					>
+						@components.CSRF(site.CSRF)
+						<input type="hidden" name="start" id="start" value={ time.Now().Unix() }/>
+						<div class="w-full">
+							<h2 class="text-xl md:text-2xl font-semibold text-foreground mb-4">Assessment Questions</h2>
+							<div class="space-y-4">
+								for index, question := range questions {
+									<div class="w-full p-5 bg-surface border border-border rounded-lg hover:border-primary transition-colors duration-200 shadow-sm">
+										<div class="flex items-start gap-3">
+											<span class="shrink-0 w-8 h-8 bg-primary/10 text-primary rounded-full flex items-center justify-center font-semibold text-sm">
+												{ strconv.Itoa(index + 1) }
+											</span>
+											<div class="flex-1">
+												@ui.RadioField("A"+strconv.Itoa(index), question, true)
+											</div>
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+						<div class="w-full p-5 bg-background rounded-lg border border-border">
+							<h2 class="text-xl font-semibold text-foreground mb-2">
+								Do you experience or fear any of the following?
+							</h2>
+							<p class="text-muted text-sm mb-4">Select all that apply</p>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+								for index, item := range multi {
+									<div class="p-3 bg-surface rounded-lg border border-border hover:border-primary transition-colors duration-200">
+										@ui.SimpleCheckboxInput("MA"+strconv.Itoa(index), item, false)
+									</div>
+								}
+							</div>
+						</div>
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonPrimary,
+							Size:    ui.ButtonLG,
+							Type:    ui.TypeSubmit,
+							FullW:   true,
+						}) {
+							<span>Submit Questionnaire</span>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+							</svg>
+						}
+					</form>
+				}
+			</div>
+		</main>
+	}
+}

@@ -14,7 +14,7 @@ import (
 
 const listActivityForAssignment = `-- name: ListActivityForAssignment :many
 SELECT
-    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at,
+    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at, e.examination_id,
     u.full_name AS actor_name
 FROM activity_events e
 LEFT JOIN users u ON u.id = e.actor_id
@@ -37,6 +37,7 @@ type ListActivityForAssignmentRow struct {
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExaminationID   *uuid.UUID         `json:"examination_id"`
 	ActorName       *string            `json:"actor_name"`
 }
 
@@ -60,6 +61,7 @@ func (q *Queries) ListActivityForAssignment(ctx context.Context, arg ListActivit
 			&i.IsDeveloperData,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.ExaminationID,
 			&i.ActorName,
 		); err != nil {
 			return nil, err
@@ -74,7 +76,7 @@ func (q *Queries) ListActivityForAssignment(ctx context.Context, arg ListActivit
 
 const listActivityForPatient = `-- name: ListActivityForPatient :many
 SELECT
-    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at,
+    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at, e.examination_id,
     u.full_name AS actor_name
 FROM activity_events e
 LEFT JOIN users u ON u.id = e.actor_id
@@ -100,6 +102,7 @@ type ListActivityForPatientRow struct {
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExaminationID   *uuid.UUID         `json:"examination_id"`
 	ActorName       *string            `json:"actor_name"`
 }
 
@@ -127,6 +130,7 @@ func (q *Queries) ListActivityForPatient(ctx context.Context, arg ListActivityFo
 			&i.IsDeveloperData,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.ExaminationID,
 			&i.ActorName,
 		); err != nil {
 			return nil, err
@@ -141,7 +145,7 @@ func (q *Queries) ListActivityForPatient(ctx context.Context, arg ListActivityFo
 
 const listRecentActivity = `-- name: ListRecentActivity :many
 SELECT
-    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at,
+    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at, e.examination_id,
     p.full_name AS patient_name,
     u.full_name AS actor_name
 FROM activity_events e
@@ -167,6 +171,7 @@ type ListRecentActivityRow struct {
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExaminationID   *uuid.UUID         `json:"examination_id"`
 	PatientName     *string            `json:"patient_name"`
 	ActorName       *string            `json:"actor_name"`
 }
@@ -190,6 +195,7 @@ func (q *Queries) ListRecentActivity(ctx context.Context, arg ListRecentActivity
 			&i.IsDeveloperData,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.ExaminationID,
 			&i.PatientName,
 			&i.ActorName,
 		); err != nil {

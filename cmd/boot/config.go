@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-
 	"regexp"
+
+	"github.com/sixafter/nanoid"
 
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 )
@@ -31,6 +32,10 @@ var dsnRegex = regexp.MustCompile(`^postgresql:\/\/([a-zA-Z0-9._%+-]+):([^@]+)@(
 func isValidDSN(dsn string) bool {
 	return dsnRegex.MatchString(dsn)
 }
+
+var Slugerr nanoid.Interface
+
+const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz02356789"
 
 type Config struct {
 	DevEmail     string
@@ -73,7 +78,7 @@ func LoadEnvVariables() error {
 	Environment.NTFY = os.Getenv("NTFY")
 	Environment.NTFYToken = os.Getenv("NTFY_TOKEN")
 	Environment.ResendApiKey = os.Getenv("RESEND_API_KEY")
-	Environment.MetricSecret = os.Getenv("METRIC_SECRET")
+	Environment.MetricSecret = os.Getenv("METRICS_SECRET")
 	Environment.Prometheus = os.Getenv("PROMETHEUS")
 	Environment.PostgresUser = os.Getenv("POSTGRES_USER")
 	if Environment.GoEnv == enums.Environments.DEVELOPMENT {
@@ -86,6 +91,12 @@ func LoadEnvVariables() error {
 	Environment.TwofaKey = os.Getenv("TWOFA_KEY")
 	Environment.TwofaKeyOld = os.Getenv("TWOFA_KEY_OLD")
 	Environment.PaginationWindow = 10
+
+	var err error
+	Slugerr, err = nanoid.NewGenerator(nanoid.WithAlphabet(alphabet), nanoid.WithLengthHint(7))
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

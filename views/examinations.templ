@@ -1,0 +1,120 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/cmd/boot"
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"strconv"
+	"github.com/Francesco99975/shorehamex2/internal/repository"
+)
+
+// statusFilterOpts builds the single-select status options from the enum so the
+// filter values always match what the item badge renders.
+func statusFilterOpts() []ui.DropOption {
+	return []ui.DropOption{
+		{Value: string(repository.ExaminationStatusASSIGNED), Label: "Assigned"},
+		{Value: string(repository.ExaminationStatusINPROGRESS), Label: "In progress"},
+		{Value: string(repository.ExaminationStatusCOMPLETED), Label: "Completed"},
+	}
+}
+
+func modeFilterOpts() []ui.DropOption {
+	return []ui.DropOption{
+		{Value: enums.AssignmentModes.REMOTE.String(), Label: "Remote"},
+		{Value: enums.AssignmentModes.IN_CLINIC.String(), Label: "In-clinic"},
+	}
+}
+
+// instrumentCodes are the test_definitions codes offered as multi-select chips.
+func instrumentCodes() []string {
+	return []string{"ASQ", "BAI", "BDI", "P3", "MMPI"}
+}
+
+templ Examinations(site config.Site, examinations []components.ExaminationItemProps, total int) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
+			<div class="space-y-4">
+				<!-- Every filter control lives inside this form so each HTMX request
+				     carries the full filter set (status + mode + instruments). -->
+				<div
+					class="bg-panel border border-border rounded-xl p-4"
+				>
+					<div id="examinations-filters" class="flex flex-wrap items-start gap-4">
+						@ui.FilterSelect(ui.FilterSelectProps{
+							Name:        "status",
+							Label:       "Status",
+							Placeholder: "Any status",
+							Opts:        statusFilterOpts(),
+							URL:         "examinations",
+							Target:      "examinations-list",
+							Include:     "#examinations-filters [name='mode'], #examinations-filters [name='instruments'], [name='page']",
+							PushURL:     true,
+						})
+						@ui.FilterSelect(ui.FilterSelectProps{
+							Name:        "mode",
+							Label:       "Delivery",
+							Placeholder: "Any delivery",
+							Opts:        modeFilterOpts(),
+							URL:         "examinations",
+							Target:      "examinations-list",
+							Include:     "[name='status'], [name='instruments'], [name='page']",
+							PushURL:     true,
+						})
+						// @ui.FilterChips(ui.FilterChipsProps{
+						// 	Name:    "instruments",
+						// 	Label:   "Instruments",
+						// 	Options: instrumentCodes(),
+						// 	URL:     "examinations/search",
+						// 	Target:  "examinations-list",
+						// 	Include: "[name='status'], [name='mode']",
+						// 	PushURL: true,
+						// })
+					</div>
+				</div>
+			</div>
+			@components.EmptyState(len(examinations) == 0, false, "No Examinations Yet...")
+			<div id="examinations-list" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mx-auto my-4">
+				@ExaminationsList(examinations, site.CSRF)
+			</div>
+			if total > boot.Environment.PaginationWindow {
+				@ExaminationsPagination(total, 1, boot.Environment.PaginationWindow, false)
+			}
+		</main>
+	}
+}
+
+templ ExaminationsList(examinations []components.ExaminationItemProps, csrf string) {
+	for _, examination := range examinations {
+		@components.ExaminationItem(examination, csrf)
+	}
+}
+
+templ ExaminationsPagination(total int, page int, perPage int, oob bool) {
+	<div
+		id="examinations-pagination"
+		if oob {
+			hx-swap-oob="true"
+		}
+		class="px-4 sm:px-6 py-4 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-3"
+	>
+		<p class="text-sm text-primary/60">
+			Showing <span class="font-medium text-primary">{ strconv.Itoa((page-1)*perPage + 1) }-{ strconv.Itoa(min(page*perPage, total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(total) }</span>
+		</p>
+		<div class="flex items-center gap-1">
+			@ui.Pagination(ui.PaginationProps{
+				Current:    page,
+				TotalRows:  total,
+				TotalPages: (total + perPage - 1) / perPage,
+				Window:     perPage,
+				URL:        "examinations",
+				Target:     "examinations-list",
+				Swap:       "innerHTML",
+				Include:    "#examinations-filters [name='status'], #examinations-filters [name='mode'], #examinations-filters [name='instruments']",
+				PushURL:    false,
+			})
+		</div>
+	</div>
+}

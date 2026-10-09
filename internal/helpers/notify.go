@@ -73,3 +73,31 @@ func ResendPasswordResetTemplate(email, token string) {
 
 	log.Infof("Email sent to %s with ID: %s", email, sent.Id)
 }
+
+func ResendAssessmentInviatationTemplate(email, name, url, expires, tests, supportEmail string) {
+	client := resend.NewClient(boot.Environment.ResendApiKey)
+
+	params := &resend.SendEmailRequest{
+		From: "Examinations <examinations@auth.urx.ink>",
+		To:   []string{email},
+		Template: &resend.EmailTemplate{
+			Id: "assessment-invitation",
+			Variables: map[string]any{
+				"PATIENT_NAME":  name,
+				"CLINIC_NAME":   "Casa Medica",
+				"ACCESS_URL":    url,
+				"EXPIRES_AT":    expires,
+				"TEST_NAMES":    tests,
+				"SUPPORT_EMAIL": supportEmail,
+			},
+		},
+	}
+
+	sent, err := client.Emails.Send(params)
+	if err != nil {
+		log.Errorf("Failed to send email: %v", err)
+		return
+	}
+
+	log.Infof("Email sent to %s with ID: %s", email, sent.Id)
+}

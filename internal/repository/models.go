@@ -98,6 +98,49 @@ func (ns NullAssignmentStatus) Value() (driver.Value, error) {
 	return string(ns.AssignmentStatus), nil
 }
 
+type ExaminationStatus string
+
+const (
+	ExaminationStatusASSIGNED   ExaminationStatus = "ASSIGNED"
+	ExaminationStatusINPROGRESS ExaminationStatus = "IN_PROGRESS"
+	ExaminationStatusCOMPLETED  ExaminationStatus = "COMPLETED"
+)
+
+func (e *ExaminationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ExaminationStatus(s)
+	case string:
+		*e = ExaminationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ExaminationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullExaminationStatus struct {
+	ExaminationStatus ExaminationStatus `json:"examination_status"`
+	Valid             bool              `json:"valid"` // Valid is true if ExaminationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullExaminationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ExaminationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ExaminationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullExaminationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ExaminationStatus), nil
+}
+
 type ScoringMethod string
 
 const (
@@ -239,16 +282,15 @@ type ActivityEvent struct {
 	IsDeveloperData bool               `json:"is_developer_data"`
 	Metadata        []byte             `json:"metadata"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExaminationID   *uuid.UUID         `json:"examination_id"`
 }
 
 type Assignment struct {
-	ID              uuid.UUID          `json:"id"`
-	PatientID       uuid.UUID          `json:"patient_id"`
-	TestCode        string             `json:"test_code"`
-	Mode            AssignmentMode     `json:"mode"`
+	ID        uuid.UUID `json:"id"`
+	PatientID uuid.UUID `json:"patient_id"`
+	TestCode  string    `json:"test_code"`
+	// Per-instrument status (ASSIGNED / IN_PROGRESS / READY_FOR_REVIEW / COMPLETED). Independent of the parent examination status.
 	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      *uuid.UUID         `json:"assigned_by"`
-	DueAt           pgtype.Timestamptz `json:"due_at"`
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
@@ -256,6 +298,10 @@ type Assignment struct {
 	IsDeveloperData bool               `json:"is_developer_data"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ExaminationID   *uuid.UUID         `json:"examination_id"`
+	// 1-based order of this instrument inside its examination.
+	Sequence int16 `json:"sequence"`
+	Page     int32 `json:"page"`
 }
 
 type AssignmentMmpiIndication struct {
@@ -281,10 +327,10 @@ type AssignmentMmpiScale struct {
 }
 
 type AssignmentReminder struct {
-	ID           uuid.UUID          `json:"id"`
-	AssignmentID uuid.UUID          `json:"assignment_id"`
-	SentBy       *uuid.UUID         `json:"sent_by"`
-	SentAt       pgtype.Timestamptz `json:"sent_at"`
+	ID            uuid.UUID          `json:"id"`
+	SentBy        *uuid.UUID         `json:"sent_by"`
+	SentAt        pgtype.Timestamptz `json:"sent_at"`
+	ExaminationID uuid.UUID          `json:"examination_id"`
 }
 
 type AssignmentResult struct {
@@ -305,6 +351,7 @@ type AssignmentSumBandResult struct {
 	ScaleLabel            string         `json:"scale_label"`
 	SeverityLabel         string         `json:"severity_label"`
 	InterpretationSummary string         `json:"interpretation_summary"`
+	SubscaleCode          string         `json:"subscale_code"`
 }
 
 type EmailVerification struct {
@@ -315,6 +362,24 @@ type EmailVerification struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	Used      bool               `json:"used"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Delivery unit: one remote link or one in-clinic session that contains an ordered list of assignments (instruments).
+type Examination struct {
+	ID        uuid.UUID      `json:"id"`
+	PatientID uuid.UUID      `json:"patient_id"`
+	Mode      AssignmentMode `json:"mode"`
+	// ASSIGNED = untouched; IN_PROGRESS = patient has started; COMPLETED = every child assignment is COMPLETED.
+	Status          ExaminationStatus  `json:"status"`
+	AssignedBy      *uuid.UUID         `json:"assigned_by"`
+	DueAt           pgtype.Timestamptz `json:"due_at"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
+	IsDeveloperData bool               `json:"is_developer_data"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type PasswordReset struct {
@@ -355,16 +420,22 @@ type PendingAuthChallenge struct {
 }
 
 type RemoteAccessToken struct {
-	ID           uuid.UUID          `json:"id"`
-	AssignmentID uuid.UUID          `json:"assignment_id"`
-	TokenHash    string             `json:"token_hash"`
-	SentToEmail  string             `json:"sent_to_email"`
-	SentAt       pgtype.Timestamptz `json:"sent_at"`
-	ResendCount  int32              `json:"resend_count"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	UsedAt       pgtype.Timestamptz `json:"used_at"`
-	Revoked      bool               `json:"revoked"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID uuid.UUID `json:"id"`
+	// Email address the link was last sent to.  Updated on every resend.
+	SentToEmail string             `json:"sent_to_email"`
+	SentAt      pgtype.Timestamptz `json:"sent_at"`
+	ResendCount int32              `json:"resend_count"`
+	// Hard expiry.  Application must reject the token after this timestamp even if used_at is still NULL.
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	// Set to TRUE when a newer token is issued for the same assignment (“Resend link” flow).  The partial unique index guarantees at most one non-revoked, unused token per assignment.
+	Revoked   bool               `json:"revoked"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// AES-GCM ciphertext of the plaintext token. Used so staff can recover/resend the same link. Key lives only in the app.
+	TokenEncrypted []byte    `json:"token_encrypted"`
+	ExaminationID  uuid.UUID `json:"examination_id"`
+	// SHA-256 (or equivalent) of the plaintext token. Used for patient-facing lookup. Never store plaintext.
+	TokenHash string `json:"token_hash"`
 }
 
 type Role struct {

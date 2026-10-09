@@ -12,10 +12,48 @@ import (
 )
 
 type AssignPayload struct {
-	PatientID   string   `form:"patient_id"`
-	Instruments []string `form:"instruments"`
-	Mode        string   `form:"mode"`
-	DueDate     string   `form:"due_date"`
+	PatientID   string                    `form:"picked_patient"`
+	Instruments []string                  `form:"instruments"`
+	Mode        repository.AssignmentMode `form:"mode"`
+	DueDate     string                    `form:"due_date"`
+}
+
+func (p *AssignPayload) MakeDueDateReadable() string {
+	t, err := time.Parse("2006-01-02", p.DueDate)
+	if err != nil {
+		return ""
+	}
+	return t.Format("January 2, 2006")
+}
+
+func (p *AssignPayload) DateToTime() time.Time {
+	t, err := time.Parse("2006-01-02", p.DueDate)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+func (p *AssignPayload) Validate() error {
+	if p.PatientID == "" {
+		return errors.New("patient ID is required")
+	}
+	if len(p.Instruments) == 0 {
+		return errors.New("at least one instrument is required")
+	}
+	if p.DueDate == "" {
+		return errors.New("due date is required")
+	}
+	if p.Mode == "" {
+		return errors.New("mode is required")
+	}
+
+	if !enums.IsAssignmentModeValid(string(p.Mode)) {
+		return errors.New("invalid mode")
+	}
+
+	return nil
+
 }
 
 type AddPatientPayload struct {

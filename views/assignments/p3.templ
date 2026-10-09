@@ -1,0 +1,65 @@
+package assignments
+
+import (
+	"time"
+	"strconv"
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ P3(site config.Site, groups [][]string, path string) {
+	@layouts.Base(site) {
+		<div class="flex items-center justify-center min-h-screen w-full px-4 py-8">
+			<div class="w-full max-w-3xl">
+				@ui.Card(ui.CardProps{}) {
+					<h1 class="text-4xl font-bold text-foreground mb-6 text-center text-balance">
+						P3 Test
+					</h1>
+					<form
+						id="fq"
+						class="w-full flex flex-col space-y-6"
+						hx-post={ path }
+						hx-target="body"
+						hx-replace-url="true"
+						hx-indicator="#indicator"
+					>
+						@components.CSRF(site.CSRF)
+						<input type="hidden" name="start" id="start" value={ time.Now().Unix() }/>
+						<div class="bg-primary/5 border-l-4 border-primary p-4 rounded-r-lg">
+							<h2 class="text-lg font-semibold text-foreground">
+								Please indicate the most appropriate answer
+							</h2>
+						</div>
+						<div class="space-y-4">
+							for index, group := range groups {
+								<div class="bg-background rounded-xl p-6 border border-border hover:border-primary hover:shadow-md transition-all duration-200">
+									<div class="flex items-start gap-3">
+										<span class="flex-shrink-0 w-8 h-8 bg-primary/10 text-primary rounded-full flex items-center justify-center font-semibold text-sm">
+											{ strconv.Itoa(index + 1) }
+										</span>
+										<div class="flex-1">
+											@MMultiRadioField("A"+strconv.Itoa(index), "", group, 1, true)
+										</div>
+									</div>
+								</div>
+							}
+						</div>
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonPrimary,
+							Size:    ui.ButtonLG,
+							Type:    ui.TypeSubmit,
+							FullW:   true,
+						}) {
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+							</svg>
+							Submit
+						}
+					</form>
+				}
+			</div>
+		</div>
+	}
+}

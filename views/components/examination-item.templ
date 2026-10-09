@@ -1,0 +1,207 @@
+package components
+
+import (
+	"fmt"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"strings"
+	"github.com/Francesco99975/shorehamex2/internal/repository"
+)
+
+type ExaminationProgress struct {
+	TestCode  string `json:"test_code"`
+	Completed bool   `json:"completed"`
+}
+
+type ExaminationItemProps struct {
+	ID          string
+	Progress    [] ExaminationProgress
+	Initials    string
+	PatientName string
+	Remote      bool
+	Status      repository.ExaminationStatus
+	Overdue     bool
+	Assigned    string
+	Due         string
+	RemoteLink  string
+}
+
+func (a *ExaminationItemProps) Done() int {
+	done := 0
+	for _, p := range a.Progress {
+		if p.Completed {
+			done++
+		}
+	}
+	return done
+}
+
+func (a *ExaminationItemProps) StatusClass() ui.BadgeVariant {
+	switch a.Status {
+	case repository.ExaminationStatusASSIGNED:
+		return ui.BadgeMuted
+	case repository.ExaminationStatusINPROGRESS:
+		return ui.BadgeWarning
+	case repository.ExaminationStatusCOMPLETED:
+		return ui.BadgeSuccess
+	default:
+		return ui.BadgeError
+	}
+}
+
+// Cta returns the label and destination for the primary action, derived from status.
+func (a *ExaminationItemProps) Cta() (string, string) {
+	switch a.Status {
+	case repository.ExaminationStatusCOMPLETED:
+		return "Examine", "/examinations/" + a.ID + "/report"
+	case repository.ExaminationStatusINPROGRESS:
+		if !a.Remote {
+			return "Resume", "/examinating/" + a.ID
+		}
+		return "View", "/examinations/" + a.ID
+	default:
+		if !a.Remote {
+			return "Resume", "/examinating/" + a.ID
+		}
+		return "View", "/examinations/" + a.ID
+	}
+}
+
+templ ExaminationItem(examination ExaminationItemProps, csrf string) {
+	{{ uiid := "a_" + strings.ReplaceAll(examination.ID, "-", "_") }}
+	{{ ctaLabel, ctaHref := examination.Cta() }}
+	<div
+		id={ uiid }
+		x-data={ "{" + uiid + "confirmDeleteModal: false, " + uiid + "copied: false}" }
+		class="bg-panel border border-border rounded-xl p-4 flex flex-col gap-3 cursor-pointer hover:border-primary/50 hover:shadow-md transition"
+	>
+
+			<div class="flex items-start justify-between gap-2">
+				<div class="flex items-center gap-2 min-w-0">
+                      <div class="w-8 h-8 shrink-0 rounded-full bg-accent text-accent-fg grid place-content-center text-xs font-semibold uppercase">{ examination.Initials }</div>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium truncate">{ examination.PatientName}</p>
+                        <p class="text-xs text-muted">{ examination.Assigned }</p>
+                      </div>
+                </div>
+				if examination.Remote {
+					<span class="text-xs px-2 py-0.5 rounded-full border text-info border-info/40 bg-info/10">Remote</span>
+				} else {
+					<span class="text-xs px-2 py-0.5 rounded-full border text-accent border-accent/40 bg-accent/10">In-clinic</span>
+				}
+			</div>
+			<div class="flex items-center gap-2 flex-wrap">
+				@ui.Badge(examination.StatusClass(), false) {
+					{ examination.Status }
+				}
+				if examination.Overdue {
+					<span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full bg-error/10 text-error border border-error/30 whitespace-nowrap">
+						<span class="w-1.5 h-1.5 rounded-full bg-error"></span> Overdue
+					</span>
+				}
+			</div>
+
+
+
+		<div>
+                    <div class="flex items-center justify-between text-xs text-muted mb-1.5">
+                      <span>{ examination.Done() } / { len(examination.Progress) } completed</span>
+                      <span class={ templ.KV(&examination.Overdue, "text-error font-medium") } >Due on { examination.Due }</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      for _, p := range examination.Progress {
+                      <span class={"inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md border transition bg-std text-muted border-border" + templ.KV(&p.Completed, "bg-primary text-primary-fg border-primary").Value}
+                        >
+                        if p.Completed {
+                         	@icons.CheckIcon("w-3 h-3 text-primary")
+                        }
+                        <span class="text-primary">{ p.TestCode }</span>
+                      </span>
+                      }
+                    </div>
+                  </div>
+
+
+		<div class="flex gap-2 pt-1">
+			<a
+				href={ templ.SafeURL(ctaHref) }
+				class="flex-1 text-center py-1.5 rounded-lg bg-primary text-primary-fg text-sm font-medium hover:opacity-90"
+			>
+				{ ctaLabel }
+			</a>
+			if examination.Remote {
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonMD,
+					Type:    ui.TypeButton,
+					Attrs: templ.Attributes{
+						"@click":      fmt.Sprintf("navigator.clipboard.writeText('%s'); %scopied = true; setTimeout(() => %scopied = false, 1600)", examination.RemoteLink, uiid, uiid),
+						":class":      uiid + "copied ? 'border-success text-success bg-success/10' : ''",
+						":aria-label": uiid + "copied ? 'Link copied' : 'Copy remote link'",
+					},
+				}) {
+					<span x-show={ "!" + uiid + "copied" } class="flex items-center gap-1.5">
+						@icons.Copy("w-4 h-4")
+						<span class="hidden sm:inline">Link</span>
+					</span>
+					<span x-show={ uiid + "copied" } x-cloak class="flex items-center gap-1.5">
+						@icons.CheckIcon("w-4 h-4")
+						<span class="hidden sm:inline">Copied</span>
+					</span>
+				}
+			}
+			@ui.Button(ui.ButtonProps{
+				Variant: ui.ButtonGhost,
+				Size:    ui.ButtonMD,
+				Type:    ui.TypeButton,
+				Attrs: templ.Attributes{
+					"@click":     uiid + "confirmDeleteModal = true",
+					"aria-label": "Delete Examination",
+					"class":      "text-muted hover:text-error",
+				},
+			}) {
+				@icons.Trash("w-4 h-4")
+			}
+			@ui.Modal(ui.ModalProps{
+				Title:    "Delete Examination",
+				OpenExpr: uiid + "confirmDeleteModal",
+			}) {
+				<div class="px-6 py-5 space-y-4">
+					<div class="p-4 rounded-lg bg-error/5 border border-error/20">
+						<p class="text-sm text-error font-medium mb-2">Warning: Permanent Deletion</p>
+						<p class="text-sm text-error/80">
+							{ fmt.Sprintf("This examination for %s will be permanently removed, along with any collected responses.", examination.PatientName) }
+						</p>
+					</div>
+				</div>
+				<div class="px-6 py-4 border-t border-error/20 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonGhost,
+						Size:    ui.ButtonMD,
+						Type:    ui.TypeButton,
+						Attrs:   templ.Attributes{"@click": uiid + "confirmDeleteModal = false"},
+					}) {
+						<span>Cancel</span>
+					}
+					<form
+						hx-delete={ "/examinations/" + examination.ID }
+						hx-target={ "#" + uiid }
+						hx-swap="outerHTML"
+						{ ui.WithLoading("delete-examination-indicator")... }
+						@htmx:after-request={ "if(event.detail.successful) " + uiid + "confirmDeleteModal = false" }
+					>
+						@CSRF(csrf)
+						@ui.Button(ui.ButtonProps{
+							Variant: ui.ButtonDanger,
+							Size:    ui.ButtonLG,
+							Type:    ui.TypeSubmit,
+							Loading: ui.LoadingConfig{IndicatorID: "delete-examination-indicator"},
+						}) {
+							<span>Delete Examination</span>
+						}
+					</form>
+				</div>
+			}
+		</div>
+	</div>
+}

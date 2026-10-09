@@ -15,13 +15,16 @@ import (
 const countActivePatients = `-- name: CountActivePatients :one
 SELECT COUNT(*) FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user($1)
+  AND (
+      $1::uuid IS NULL
+      OR is_developer_data = is_developer_user($1::uuid)
+  )
 `
 
 // Backs a dashboard "Active patients" stat. For a developer viewer,
 // this counts only their team's developer-flagged patients — real
 // patients are entirely outside a developer's view, by design.
-func (q *Queries) CountActivePatients(ctx context.Context, viewerID uuid.UUID) (int64, error) {
+func (q *Queries) CountActivePatients(ctx context.Context, viewerID *uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countActivePatients, viewerID)
 	var count int64
 	err := row.Scan(&count)
@@ -88,12 +91,15 @@ func (q *Queries) CreatePatient(ctx context.Context, arg CreatePatientParams) (*
 const deletePatient = `-- name: DeletePatient :exec
 DELETE FROM patients
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR is_developer_data = is_developer_user($2::uuid)
+  )
 `
 
 type DeletePatientParams struct {
-	Mrn      string    `json:"mrn"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	Mrn      string     `json:"mrn"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
 // Hard delete. Scoped only by the same partition rule as every other
@@ -112,12 +118,15 @@ const getPatient = `-- name: GetPatient :one
 
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE id = $1
-  AND is_developer_data = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR is_developer_data = is_developer_user($2::uuid)
+  )
 `
 
 type GetPatientParams struct {
-	ID       uuid.UUID `json:"id"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	ID       uuid.UUID  `json:"id"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
 // patients.sql
@@ -179,12 +188,15 @@ func (q *Queries) GetPatient(ctx context.Context, arg GetPatientParams) (*Patien
 const getPatientByMRN = `-- name: GetPatientByMRN :one
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR is_developer_data = is_developer_user($2::uuid)
+  )
 `
 
 type GetPatientByMRNParams struct {
-	Mrn      string    `json:"mrn"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	Mrn      string     `json:"mrn"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
 // For intake lookups / duplicate-MRN checks before creating a new record.
@@ -214,15 +226,18 @@ func (q *Queries) GetPatientByMRN(ctx context.Context, arg GetPatientByMRNParams
 const listPatients = `-- name: ListPatients :many
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
-  AND is_developer_data = is_developer_user($1)
+  AND (
+      $1::uuid IS NULL
+      OR is_developer_data = is_developer_user($1::uuid)
+  )
 ORDER BY full_name
 LIMIT $3 OFFSET $2
 `
 
 type ListPatientsParams struct {
-	ViewerID  uuid.UUID `json:"viewer_id"`
-	RowOffset int32     `json:"row_offset"`
-	RowLimit  int32     `json:"row_limit"`
+	ViewerID  *uuid.UUID `json:"viewer_id"`
+	RowOffset int32      `json:"row_offset"`
+	RowLimit  int32      `json:"row_limit"`
 }
 
 // Main patient directory. Alphabetical by name; swap to
@@ -268,14 +283,17 @@ const listPatientsByStatus = `-- name: ListPatientsByStatus :many
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
   AND computed_status = $1
-  AND is_developer_data = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR is_developer_data = is_developer_user($2::uuid)
+  )
 ORDER BY last_activity_at DESC NULLS LAST
 LIMIT $4 OFFSET $3
 `
 
 type ListPatientsByStatusParams struct {
 	ComputedStatus *AssignmentStatus `json:"computed_status"`
-	ViewerID       uuid.UUID         `json:"viewer_id"`
+	ViewerID       *uuid.UUID        `json:"viewer_id"`
 	RowOffset      int32             `json:"row_offset"`
 	RowLimit       int32             `json:"row_limit"`
 }
@@ -326,7 +344,10 @@ func (q *Queries) ListPatientsByStatus(ctx context.Context, arg ListPatientsBySt
 const searchPatients = `-- name: SearchPatients :many
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
-AND is_developer_data = is_developer_user($1)
+AND (
+    $1::uuid IS NULL
+    OR is_developer_data = is_developer_user($1::uuid)
+)
 AND (full_name ILIKE '%' || $2 || '%' OR mrn ILIKE '%' || $2 || '%')
 ORDER BY full_name
 LIMIT $4
@@ -334,7 +355,7 @@ OFFSET ($3 - 1) * $4
 `
 
 type SearchPatientsParams struct {
-	ViewerID uuid.UUID   `json:"viewer_id"`
+	ViewerID *uuid.UUID  `json:"viewer_id"`
 	Query    *string     `json:"query"`
 	Page     interface{} `json:"page"`
 	RowLimit int32       `json:"row_limit"`
@@ -389,14 +410,17 @@ const setPatientActive = `-- name: SetPatientActive :one
 UPDATE patients
 SET is_active = $2
 WHERE id = $1
-  AND is_developer_data = is_developer_user($3)
+  AND (
+      $3::uuid IS NULL
+      OR is_developer_data = is_developer_user($3::uuid)
+  )
 RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
 type SetPatientActiveParams struct {
-	ID       uuid.UUID `json:"id"`
-	IsActive bool      `json:"is_active"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	ID       uuid.UUID  `json:"id"`
+	IsActive bool       `json:"is_active"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
 // Archive/reactivate — the safe, reversible removal path.
@@ -432,7 +456,10 @@ SET
     date_of_birth = $5,
     sex = $6
 WHERE mrn = $1
-  AND is_developer_data = is_developer_user($7)
+  AND (
+      $7::uuid IS NULL
+      OR is_developer_data = is_developer_user($7::uuid)
+  )
 RETURNING id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes
 `
 
@@ -443,7 +470,7 @@ type UpdatePatientDetailsParams struct {
 	Phone       *string     `json:"phone"`
 	DateOfBirth pgtype.Date `json:"date_of_birth"`
 	Sex         *Sex        `json:"sex"`
-	ViewerID    uuid.UUID   `json:"viewer_id"`
+	ViewerID    *uuid.UUID  `json:"viewer_id"`
 }
 
 func (q *Queries) UpdatePatientDetails(ctx context.Context, arg UpdatePatientDetailsParams) (*Patient, error) {

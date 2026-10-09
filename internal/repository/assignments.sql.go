@@ -17,12 +17,14 @@ UPDATE assignments a
 SET status = 'COMPLETED',
     reviewed_at = NOW(),
     reviewed_by = $2
-FROM patients p
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
 WHERE a.id = $1
-  AND p.id = a.patient_id
+  AND a.examination_id = e.id
   AND a.status = 'READY_FOR_REVIEW'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
-RETURNING a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at
+  AND (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+      = is_developer_user($2)
+RETURNING a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page
 `
 
 type CompleteAssignmentReviewParams struct {
@@ -30,9 +32,6 @@ type CompleteAssignmentReviewParams struct {
 	ReviewerID *uuid.UUID `json:"reviewer_id"`
 }
 
-// A clinician confirming the review — reviewer_id doubles as both
-// "who reviewed this" and "who's asking" for the partition check, since
-// in every real flow they're the same person.
 func (q *Queries) CompleteAssignmentReview(ctx context.Context, arg CompleteAssignmentReviewParams) (*Assignment, error) {
 	row := q.db.QueryRow(ctx, completeAssignmentReview, arg.ID, arg.ReviewerID)
 	var i Assignment
@@ -40,10 +39,7 @@ func (q *Queries) CompleteAssignmentReview(ctx context.Context, arg CompleteAssi
 		&i.ID,
 		&i.PatientID,
 		&i.TestCode,
-		&i.Mode,
 		&i.Status,
-		&i.AssignedBy,
-		&i.DueAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.ReviewedAt,
@@ -51,24 +47,31 @@ func (q *Queries) CompleteAssignmentReview(ctx context.Context, arg CompleteAssi
 		&i.IsDeveloperData,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
 	)
 	return &i, err
 }
 
 const countActiveAssignmentsForPatient = `-- name: CountActiveAssignmentsForPatient :one
 SELECT COUNT(*) FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-WHERE a.patient_id = $1
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE e.patient_id = $1
   AND a.status <> 'COMPLETED'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type CountActiveAssignmentsForPatientParams struct {
-	PatientID uuid.UUID `json:"patient_id"`
-	ViewerID  uuid.UUID `json:"viewer_id"`
+	PatientID uuid.UUID  `json:"patient_id"`
+	ViewerID  *uuid.UUID `json:"viewer_id"`
 }
 
-// For a small "N active tests" badge on a patient's row/header.
 func (q *Queries) CountActiveAssignmentsForPatient(ctx context.Context, arg CountActiveAssignmentsForPatientParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countActiveAssignmentsForPatient, arg.PatientID, arg.ViewerID)
 	var count int64
@@ -78,13 +81,17 @@ func (q *Queries) CountActiveAssignmentsForPatient(ctx context.Context, arg Coun
 
 const countAssignmentsAwaitingReview = `-- name: CountAssignmentsAwaitingReview :one
 SELECT COUNT(*) FROM assignments a
-JOIN patients p ON p.id = a.patient_id
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
 WHERE a.status = 'READY_FOR_REVIEW'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($1)
+  AND (
+      $1::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($1::uuid)
+  )
 `
 
-// Backs the dashboard's "Awaiting review" stat card.
-func (q *Queries) CountAssignmentsAwaitingReview(ctx context.Context, viewerID uuid.UUID) (int64, error) {
+func (q *Queries) CountAssignmentsAwaitingReview(ctx context.Context, viewerID *uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countAssignmentsAwaitingReview, viewerID)
 	var count int64
 	err := row.Scan(&count)
@@ -93,19 +100,22 @@ func (q *Queries) CountAssignmentsAwaitingReview(ctx context.Context, viewerID u
 
 const countAssignmentsCompletedSince = `-- name: CountAssignmentsCompletedSince :one
 SELECT COUNT(*) FROM assignments a
-JOIN patients p ON p.id = a.patient_id
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
 WHERE a.status = 'COMPLETED'
   AND a.completed_at >= $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type CountAssignmentsCompletedSinceParams struct {
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	ViewerID    uuid.UUID          `json:"viewer_id"`
+	ViewerID    *uuid.UUID         `json:"viewer_id"`
 }
 
-// Backs the dashboard's "Completed (7d)"-style stat card; pass
-// NOW() - INTERVAL '7 days' (or whatever window) as $1.
 func (q *Queries) CountAssignmentsCompletedSince(ctx context.Context, arg CountAssignmentsCompletedSinceParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countAssignmentsCompletedSince, arg.CompletedAt, arg.ViewerID)
 	var count int64
@@ -115,13 +125,17 @@ func (q *Queries) CountAssignmentsCompletedSince(ctx context.Context, arg CountA
 
 const countAssignmentsInProgress = `-- name: CountAssignmentsInProgress :one
 SELECT COUNT(*) FROM assignments a
-JOIN patients p ON p.id = a.patient_id
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
 WHERE a.status = 'IN_PROGRESS'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($1)
+  AND (
+      $1::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($1::uuid)
+  )
 `
 
-// Backs the dashboard's "In progress" stat card.
-func (q *Queries) CountAssignmentsInProgress(ctx context.Context, viewerID uuid.UUID) (int64, error) {
+func (q *Queries) CountAssignmentsInProgress(ctx context.Context, viewerID *uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countAssignmentsInProgress, viewerID)
 	var count int64
 	err := row.Scan(&count)
@@ -130,46 +144,56 @@ func (q *Queries) CountAssignmentsInProgress(ctx context.Context, viewerID uuid.
 
 const createAssignment = `-- name: CreateAssignment :one
 INSERT INTO assignments (
-    id, patient_id, test_code, mode, assigned_by, due_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6
+    id, examination_id, patient_id, test_code, sequence, status, page
 )
-RETURNING id, patient_id, test_code, mode, status, assigned_by, due_at, started_at, completed_at, reviewed_at, reviewed_by, is_developer_data, created_at, updated_at
+SELECT
+    $1,
+    e.id,
+    e.patient_id,
+    $2,
+    $3,
+    COALESCE($4::assignment_status, 'ASSIGNED') AS status,
+    COALESCE($5, 1) AS page
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = $6
+  AND (
+      $7::uuid IS NULL
+      OR (e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($7::uuid)
+  )
+RETURNING id, patient_id, test_code, status, started_at, completed_at, reviewed_at, reviewed_by, is_developer_data, created_at, updated_at, examination_id, sequence, page
 `
 
 type CreateAssignmentParams struct {
-	ID         uuid.UUID          `json:"id"`
-	PatientID  uuid.UUID          `json:"patient_id"`
-	TestCode   string             `json:"test_code"`
-	Mode       AssignmentMode     `json:"mode"`
-	AssignedBy *uuid.UUID         `json:"assigned_by"`
-	DueAt      pgtype.Timestamptz `json:"due_at"`
+	ID            uuid.UUID         `json:"id"`
+	TestCode      string            `json:"test_code"`
+	Sequence      int16             `json:"sequence"`
+	Status        *AssignmentStatus `json:"status"`
+	Page          *int32            `json:"page"`
+	ExaminationID uuid.UUID         `json:"examination_id"`
+	ViewerID      *uuid.UUID        `json:"viewer_id"`
 }
 
-// is_developer_data is NOT a column here — stamped automatically by
-// trigger_mark_assignment_developer_data based on assigned_by's role.
-// Also implicitly needs a matching assignment_results envelope row —
-// see CreateAssignmentResult in assignment_results.sql, called
-// immediately after this in the same transaction (kept as two queries,
-// not one, since assignment_results.sql owns that table's shape).
+// is_developer_data is stamped by trigger from the parent examination.
+// mode / due_at / assigned_by live on the examination.
+// page defaults to 1 when not supplied.
 func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (*Assignment, error) {
 	row := q.db.QueryRow(ctx, createAssignment,
 		arg.ID,
-		arg.PatientID,
 		arg.TestCode,
-		arg.Mode,
-		arg.AssignedBy,
-		arg.DueAt,
+		arg.Sequence,
+		arg.Status,
+		arg.Page,
+		arg.ExaminationID,
+		arg.ViewerID,
 	)
 	var i Assignment
 	err := row.Scan(
 		&i.ID,
 		&i.PatientID,
 		&i.TestCode,
-		&i.Mode,
 		&i.Status,
-		&i.AssignedBy,
-		&i.DueAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.ReviewedAt,
@@ -177,28 +201,31 @@ func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentPara
 		&i.IsDeveloperData,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
 	)
 	return &i, err
 }
 
 const deleteAssignment = `-- name: DeleteAssignment :exec
 DELETE FROM assignments a
-USING patients p
+USING examinations e
+JOIN patients p ON p.id = e.patient_id
 WHERE a.id = $1
-  AND p.id = a.patient_id
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND a.examination_id = e.id
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type DeleteAssignmentParams struct {
-	ID       uuid.UUID `json:"id"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	ID       uuid.UUID  `json:"id"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
-// Hard delete, no status restriction — scoped only by the same
-// partition rule as every other query here, NOT developer-only. Same
-// flag as patients.DeletePatient: this removes any append-only/
-// retention protection on real assignment/result history if that
-// matters for real clinical data.
 func (q *Queries) DeleteAssignment(ctx context.Context, arg DeleteAssignmentParams) error {
 	_, err := q.db.Exec(ctx, deleteAssignment, arg.ID, arg.ViewerID)
 	return err
@@ -206,24 +233,23 @@ func (q *Queries) DeleteAssignment(ctx context.Context, arg DeleteAssignmentPara
 
 const deleteUnstartedAssignment = `-- name: DeleteUnstartedAssignment :exec
 DELETE FROM assignments a
-USING patients p
+USING examinations e
+JOIN patients p ON p.id = e.patient_id
 WHERE a.id = $1
-  AND p.id = a.patient_id
+  AND a.examination_id = e.id
   AND a.status = 'ASSIGNED'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type DeleteUnstartedAssignmentParams struct {
-	ID       uuid.UUID `json:"id"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	ID       uuid.UUID  `json:"id"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
-// Safe, reversible-in-spirit correction path for a real mistake (wrong
-// test assigned to the wrong patient). Restricted to status =
-// 'ASSIGNED': once a patient has answered even one item, use
-// DeleteAssignment instead, which has no such restriction. Unrestricted
-// by role beyond the usual partition check — any ADMIN/USER can use
-// this on a real assignment, any developer on a developer-flagged one.
 func (q *Queries) DeleteUnstartedAssignment(ctx context.Context, arg DeleteUnstartedAssignmentParams) error {
 	_, err := q.db.Exec(ctx, deleteUnstartedAssignment, arg.ID, arg.ViewerID)
 	return err
@@ -231,52 +257,43 @@ func (q *Queries) DeleteUnstartedAssignment(ctx context.Context, arg DeleteUnsta
 
 const getAssignment = `-- name: GetAssignment :one
 
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at FROM assignments a
-JOIN patients p ON p.id = a.patient_id
+SELECT a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page FROM assignments a
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
 WHERE a.id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
 `
 
 type GetAssignmentParams struct {
-	ID       uuid.UUID `json:"id"`
-	ViewerID uuid.UUID `json:"viewer_id"`
+	ID       uuid.UUID  `json:"id"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
 }
 
 // assignments.sql
 //
-// sqlc queries for the assignments table.
+// sqlc queries for the assignments table (individual instruments
+// inside an examination).
 //
-// Visibility/CRUD rule — same strict partition as patients.sql:
+// Visibility rule — join through examinations + patients:
 //
-//	(a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
+//	(a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+//	    = is_developer_user(viewer_id)
 //
-// An assignment is in the developer partition if EITHER the assignment
-// itself OR its patient is developer-flagged (a developer can create a
-// throwaway assignment against an otherwise-real, ADMIN/USER-visible
-// patient — that assignment alone still belongs entirely to the
-// developer partition). ADMIN/USER viewers only ever see/manage
-// assignments fully outside that partition; DEVELOPER viewers only
-// ever see/manage assignments inside it. Every query below joins
-// patients as `p` for this reason, even ones that don't otherwise need
-// patient columns — one uniform predicate shape across the whole file.
+// In practice a.is_developer_data is stamped from the parent examination,
+// so the examination/patient flags are the real gate.
 //
-// Status lifecycle assumed here: ASSIGNED -> IN_PROGRESS (auto, on
-// first response — see mark_assignment_started_on_response trigger) ->
-// READY_FOR_REVIEW (set by the app once the scoring engine finishes
-// scoring all responses) -> COMPLETED (set once a clinician confirms
-// the review). "Overdue" is not a status value — it's
-// (due_at < now() AND status <> 'COMPLETED'), same as the partial index
-// on assignments(due_at).
+// Status lifecycle (per instrument):
 //
-// MarkAssignmentReadyForReview is the one write query here WITHOUT a
-// viewer/partition check: it's called by the scoring pipeline itself
-// right after computing scores, not by a user clicking something in the
-// UI, so there's no "viewer" to check against — it should transition
-// any assignment, real or developer-flagged, accurately.
+//	ASSIGNED → IN_PROGRESS (trigger on first response)
+//	         → READY_FOR_REVIEW (scoring pipeline)
+//	         → COMPLETED (clinician confirms review)
 //
-// Both DeleteUnstartedAssignment and DeleteAssignment are unrestricted
-// within a viewer's own partition (no developer-only carve-out) — see
-// patients.sql's header comment for the same flag on DeletePatient.
+// mode / due_at / assigned_by live on examinations, not here.
+// page defaults to 1 (tracks the current page within a multi-page instrument).
 func (q *Queries) GetAssignment(ctx context.Context, arg GetAssignmentParams) (*Assignment, error) {
 	row := q.db.QueryRow(ctx, getAssignment, arg.ID, arg.ViewerID)
 	var i Assignment
@@ -284,10 +301,7 @@ func (q *Queries) GetAssignment(ctx context.Context, arg GetAssignmentParams) (*
 		&i.ID,
 		&i.PatientID,
 		&i.TestCode,
-		&i.Mode,
 		&i.Status,
-		&i.AssignedBy,
-		&i.DueAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.ReviewedAt,
@@ -295,369 +309,170 @@ func (q *Queries) GetAssignment(ctx context.Context, arg GetAssignmentParams) (*
 		&i.IsDeveloperData,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
 	)
 	return &i, err
 }
 
-const listAssignmentsAwaitingReview = `-- name: ListAssignmentsAwaitingReview :many
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, p.full_name AS patient_name, p.mrn AS patient_mrn, td.name AS test_name
+const getNextAssignmentInExamination = `-- name: GetNextAssignmentInExamination :one
+SELECT a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page
 FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-JOIN test_definitions td ON td.code = a.test_code
-WHERE a.status = 'READY_FOR_REVIEW'
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($1)
-ORDER BY a.completed_at
-LIMIT $3 OFFSET $2
-`
-
-type ListAssignmentsAwaitingReviewParams struct {
-	ViewerID  uuid.UUID `json:"viewer_id"`
-	RowOffset int32     `json:"row_offset"`
-	RowLimit  int32     `json:"row_limit"`
-}
-
-type ListAssignmentsAwaitingReviewRow struct {
-	ID              uuid.UUID          `json:"id"`
-	PatientID       uuid.UUID          `json:"patient_id"`
-	TestCode        string             `json:"test_code"`
-	Mode            AssignmentMode     `json:"mode"`
-	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      *uuid.UUID         `json:"assigned_by"`
-	DueAt           pgtype.Timestamptz `json:"due_at"`
-	StartedAt       pgtype.Timestamptz `json:"started_at"`
-	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
-	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
-	IsDeveloperData bool               `json:"is_developer_data"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	PatientName     string             `json:"patient_name"`
-	PatientMrn      string             `json:"patient_mrn"`
-	TestName        string             `json:"test_name"`
-}
-
-// Dashboard-wide "needs your attention" list, oldest-waiting-first.
-// Joins patient name too, since this spans multiple patients. For a
-// developer viewer, this is scoped entirely to their team's test
-// assignments, same as everything else in this file.
-func (q *Queries) ListAssignmentsAwaitingReview(ctx context.Context, arg ListAssignmentsAwaitingReviewParams) ([]*ListAssignmentsAwaitingReviewRow, error) {
-	rows, err := q.db.Query(ctx, listAssignmentsAwaitingReview, arg.ViewerID, arg.RowOffset, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []*ListAssignmentsAwaitingReviewRow
-	for rows.Next() {
-		var i ListAssignmentsAwaitingReviewRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PatientID,
-			&i.TestCode,
-			&i.Mode,
-			&i.Status,
-			&i.AssignedBy,
-			&i.DueAt,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.ReviewedAt,
-			&i.ReviewedBy,
-			&i.IsDeveloperData,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.PatientName,
-			&i.PatientMrn,
-			&i.TestName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAssignmentsForPatient = `-- name: ListAssignmentsForPatient :many
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, td.name AS test_name, td.scoring_method AS test_scoring_method
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-JOIN test_definitions td ON td.code = a.test_code
-WHERE a.patient_id = $1
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
-ORDER BY a.created_at DESC
-`
-
-type ListAssignmentsForPatientParams struct {
-	PatientID uuid.UUID `json:"patient_id"`
-	ViewerID  uuid.UUID `json:"viewer_id"`
-}
-
-type ListAssignmentsForPatientRow struct {
-	ID                uuid.UUID          `json:"id"`
-	PatientID         uuid.UUID          `json:"patient_id"`
-	TestCode          string             `json:"test_code"`
-	Mode              AssignmentMode     `json:"mode"`
-	Status            AssignmentStatus   `json:"status"`
-	AssignedBy        *uuid.UUID         `json:"assigned_by"`
-	DueAt             pgtype.Timestamptz `json:"due_at"`
-	StartedAt         pgtype.Timestamptz `json:"started_at"`
-	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy        *uuid.UUID         `json:"reviewed_by"`
-	IsDeveloperData   bool               `json:"is_developer_data"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	TestName          string             `json:"test_name"`
-	TestScoringMethod ScoringMethod      `json:"test_scoring_method"`
-}
-
-// Powers the patient detail view's assignment list. Joins
-// test_definitions for display name so the UI doesn't need a second
-// round trip per row.
-func (q *Queries) ListAssignmentsForPatient(ctx context.Context, arg ListAssignmentsForPatientParams) ([]*ListAssignmentsForPatientRow, error) {
-	rows, err := q.db.Query(ctx, listAssignmentsForPatient, arg.PatientID, arg.ViewerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []*ListAssignmentsForPatientRow
-	for rows.Next() {
-		var i ListAssignmentsForPatientRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PatientID,
-			&i.TestCode,
-			&i.Mode,
-			&i.Status,
-			&i.AssignedBy,
-			&i.DueAt,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.ReviewedAt,
-			&i.ReviewedBy,
-			&i.IsDeveloperData,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.TestName,
-			&i.TestScoringMethod,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAssignmentsForPatientByStatus = `-- name: ListAssignmentsForPatientByStatus :many
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, td.name AS test_name, td.scoring_method AS test_scoring_method
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-JOIN test_definitions td ON td.code = a.test_code
-WHERE a.patient_id = $1
-  AND a.status = $2
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($3)
-ORDER BY a.created_at DESC
-`
-
-type ListAssignmentsForPatientByStatusParams struct {
-	PatientID uuid.UUID        `json:"patient_id"`
-	Status    AssignmentStatus `json:"status"`
-	ViewerID  uuid.UUID        `json:"viewer_id"`
-}
-
-type ListAssignmentsForPatientByStatusRow struct {
-	ID                uuid.UUID          `json:"id"`
-	PatientID         uuid.UUID          `json:"patient_id"`
-	TestCode          string             `json:"test_code"`
-	Mode              AssignmentMode     `json:"mode"`
-	Status            AssignmentStatus   `json:"status"`
-	AssignedBy        *uuid.UUID         `json:"assigned_by"`
-	DueAt             pgtype.Timestamptz `json:"due_at"`
-	StartedAt         pgtype.Timestamptz `json:"started_at"`
-	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy        *uuid.UUID         `json:"reviewed_by"`
-	IsDeveloperData   bool               `json:"is_developer_data"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	TestName          string             `json:"test_name"`
-	TestScoringMethod ScoringMethod      `json:"test_scoring_method"`
-}
-
-// Backs the patient detail view's status filter tabs (In progress /
-// Ready to review / Complete). For the "Overdue" tab, use
-// ListOverdueAssignmentsForPatient instead — overdue cuts across
-// multiple statuses, it isn't one itself.
-func (q *Queries) ListAssignmentsForPatientByStatus(ctx context.Context, arg ListAssignmentsForPatientByStatusParams) ([]*ListAssignmentsForPatientByStatusRow, error) {
-	rows, err := q.db.Query(ctx, listAssignmentsForPatientByStatus, arg.PatientID, arg.Status, arg.ViewerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []*ListAssignmentsForPatientByStatusRow
-	for rows.Next() {
-		var i ListAssignmentsForPatientByStatusRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PatientID,
-			&i.TestCode,
-			&i.Mode,
-			&i.Status,
-			&i.AssignedBy,
-			&i.DueAt,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.ReviewedAt,
-			&i.ReviewedBy,
-			&i.IsDeveloperData,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.TestName,
-			&i.TestScoringMethod,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOverdueAssignments = `-- name: ListOverdueAssignments :many
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, p.full_name AS patient_name, p.mrn AS patient_mrn, td.name AS test_name
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-JOIN test_definitions td ON td.code = a.test_code
-WHERE a.status <> 'COMPLETED'
-  AND a.due_at < NOW()
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($1)
-ORDER BY a.due_at
-LIMIT $3 OFFSET $2
-`
-
-type ListOverdueAssignmentsParams struct {
-	ViewerID  uuid.UUID `json:"viewer_id"`
-	RowOffset int32     `json:"row_offset"`
-	RowLimit  int32     `json:"row_limit"`
-}
-
-type ListOverdueAssignmentsRow struct {
-	ID              uuid.UUID          `json:"id"`
-	PatientID       uuid.UUID          `json:"patient_id"`
-	TestCode        string             `json:"test_code"`
-	Mode            AssignmentMode     `json:"mode"`
-	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      *uuid.UUID         `json:"assigned_by"`
-	DueAt           pgtype.Timestamptz `json:"due_at"`
-	StartedAt       pgtype.Timestamptz `json:"started_at"`
-	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
-	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
-	IsDeveloperData bool               `json:"is_developer_data"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	PatientName     string             `json:"patient_name"`
-	PatientMrn      string             `json:"patient_mrn"`
-	TestName        string             `json:"test_name"`
-}
-
-// Dashboard-wide overdue list, same shape as ListAssignmentsAwaitingReview.
-func (q *Queries) ListOverdueAssignments(ctx context.Context, arg ListOverdueAssignmentsParams) ([]*ListOverdueAssignmentsRow, error) {
-	rows, err := q.db.Query(ctx, listOverdueAssignments, arg.ViewerID, arg.RowOffset, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []*ListOverdueAssignmentsRow
-	for rows.Next() {
-		var i ListOverdueAssignmentsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PatientID,
-			&i.TestCode,
-			&i.Mode,
-			&i.Status,
-			&i.AssignedBy,
-			&i.DueAt,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.ReviewedAt,
-			&i.ReviewedBy,
-			&i.IsDeveloperData,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.PatientName,
-			&i.PatientMrn,
-			&i.TestName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOverdueAssignmentsForPatient = `-- name: ListOverdueAssignmentsForPatient :many
-SELECT a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, td.name AS test_name
-FROM assignments a
-JOIN patients p ON p.id = a.patient_id
-JOIN test_definitions td ON td.code = a.test_code
-WHERE a.patient_id = $1
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
+WHERE a.examination_id = $1
   AND a.status <> 'COMPLETED'
-  AND a.due_at < NOW()
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
-ORDER BY a.due_at
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
+ORDER BY a.sequence
+LIMIT 1
 `
 
-type ListOverdueAssignmentsForPatientParams struct {
-	PatientID uuid.UUID `json:"patient_id"`
-	ViewerID  uuid.UUID `json:"viewer_id"`
+type GetNextAssignmentInExaminationParams struct {
+	ExaminationID *uuid.UUID `json:"examination_id"`
+	ViewerID      *uuid.UUID `json:"viewer_id"`
 }
 
-type ListOverdueAssignmentsForPatientRow struct {
-	ID              uuid.UUID          `json:"id"`
-	PatientID       uuid.UUID          `json:"patient_id"`
-	TestCode        string             `json:"test_code"`
-	Mode            AssignmentMode     `json:"mode"`
-	Status          AssignmentStatus   `json:"status"`
-	AssignedBy      *uuid.UUID         `json:"assigned_by"`
-	DueAt           pgtype.Timestamptz `json:"due_at"`
-	StartedAt       pgtype.Timestamptz `json:"started_at"`
-	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
-	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewedBy      *uuid.UUID         `json:"reviewed_by"`
-	IsDeveloperData bool               `json:"is_developer_data"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	TestName        string             `json:"test_name"`
+// Resume helper: first incomplete assignment in sequence order.
+func (q *Queries) GetNextAssignmentInExamination(ctx context.Context, arg GetNextAssignmentInExaminationParams) (*Assignment, error) {
+	row := q.db.QueryRow(ctx, getNextAssignmentInExamination, arg.ExaminationID, arg.ViewerID)
+	var i Assignment
+	err := row.Scan(
+		&i.ID,
+		&i.PatientID,
+		&i.TestCode,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.ReviewedAt,
+		&i.ReviewedBy,
+		&i.IsDeveloperData,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
+	)
+	return &i, err
 }
 
-func (q *Queries) ListOverdueAssignmentsForPatient(ctx context.Context, arg ListOverdueAssignmentsForPatientParams) ([]*ListOverdueAssignmentsForPatientRow, error) {
-	rows, err := q.db.Query(ctx, listOverdueAssignmentsForPatient, arg.PatientID, arg.ViewerID)
+const incrementAssignmentPage = `-- name: IncrementAssignmentPage :one
+UPDATE assignments a
+SET page = a.page + 1
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE a.id = $1
+  AND a.examination_id = e.id
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
+RETURNING a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page
+`
+
+type IncrementAssignmentPageParams struct {
+	AssignmentID uuid.UUID  `json:"assignment_id"`
+	ViewerID     *uuid.UUID `json:"viewer_id"`
+}
+
+func (q *Queries) IncrementAssignmentPage(ctx context.Context, arg IncrementAssignmentPageParams) (*Assignment, error) {
+	row := q.db.QueryRow(ctx, incrementAssignmentPage, arg.AssignmentID, arg.ViewerID)
+	var i Assignment
+	err := row.Scan(
+		&i.ID,
+		&i.PatientID,
+		&i.TestCode,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.ReviewedAt,
+		&i.ReviewedBy,
+		&i.IsDeveloperData,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
+	)
+	return &i, err
+}
+
+const listAssignmentsForExamination = `-- name: ListAssignmentsForExamination :many
+SELECT
+    a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page,
+    td.name           AS test_name,
+    td.scoring_method AS test_scoring_method,
+    td.item_count,
+    CASE
+        WHEN td.item_count <= 0 THEN 0
+        ELSE LEAST(
+            100,
+            (
+                (SELECT COUNT(*)::int
+                 FROM jsonb_object_keys(COALESCE(ar.responses, '{}'::jsonb)))
+                * 100
+            ) / td.item_count
+        )
+    END AS progress_pct
+FROM assignments a
+JOIN examinations e ON e.id = a.examination_id
+JOIN patients p ON p.id = e.patient_id
+JOIN test_definitions td ON td.code = a.test_code
+LEFT JOIN assignment_results ar ON ar.assignment_id = a.id
+WHERE a.examination_id = $1
+  AND (
+      $2::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($2::uuid)
+  )
+ORDER BY a.sequence
+`
+
+type ListAssignmentsForExaminationParams struct {
+	ExaminationID *uuid.UUID `json:"examination_id"`
+	ViewerID      *uuid.UUID `json:"viewer_id"`
+}
+
+type ListAssignmentsForExaminationRow struct {
+	ID                uuid.UUID          `json:"id"`
+	PatientID         uuid.UUID          `json:"patient_id"`
+	TestCode          string             `json:"test_code"`
+	Status            AssignmentStatus   `json:"status"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewedBy        *uuid.UUID         `json:"reviewed_by"`
+	IsDeveloperData   bool               `json:"is_developer_data"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ExaminationID     *uuid.UUID         `json:"examination_id"`
+	Sequence          int16              `json:"sequence"`
+	Page              int32              `json:"page"`
+	TestName          string             `json:"test_name"`
+	TestScoringMethod ScoringMethod      `json:"test_scoring_method"`
+	ItemCount         int16              `json:"item_count"`
+	ProgressPct       interface{}        `json:"progress_pct"`
+}
+
+func (q *Queries) ListAssignmentsForExamination(ctx context.Context, arg ListAssignmentsForExaminationParams) ([]*ListAssignmentsForExaminationRow, error) {
+	rows, err := q.db.Query(ctx, listAssignmentsForExamination, arg.ExaminationID, arg.ViewerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []*ListOverdueAssignmentsForPatientRow
+	var items []*ListAssignmentsForExaminationRow
 	for rows.Next() {
-		var i ListOverdueAssignmentsForPatientRow
+		var i ListAssignmentsForExaminationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PatientID,
 			&i.TestCode,
-			&i.Mode,
 			&i.Status,
-			&i.AssignedBy,
-			&i.DueAt,
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.ReviewedAt,
@@ -665,7 +480,13 @@ func (q *Queries) ListOverdueAssignmentsForPatient(ctx context.Context, arg List
 			&i.IsDeveloperData,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExaminationID,
+			&i.Sequence,
+			&i.Page,
 			&i.TestName,
+			&i.TestScoringMethod,
+			&i.ItemCount,
+			&i.ProgressPct,
 		); err != nil {
 			return nil, err
 		}
@@ -683,13 +504,10 @@ SET status = 'READY_FOR_REVIEW',
     completed_at = NOW()
 WHERE id = $1
   AND status = 'IN_PROGRESS'
-RETURNING id, patient_id, test_code, mode, status, assigned_by, due_at, started_at, completed_at, reviewed_at, reviewed_by, is_developer_data, created_at, updated_at
+RETURNING id, patient_id, test_code, status, started_at, completed_at, reviewed_at, reviewed_by, is_developer_data, created_at, updated_at, examination_id, sequence, page
 `
 
-// Called by the scoring pipeline once every response is in and scored —
-// see the header comment for why this skips the viewer/partition check.
-// Guarded by the current status so it can't be called out of order
-// (e.g. twice, or on something already COMPLETED).
+// Scoring pipeline — no viewer/partition check.
 func (q *Queries) MarkAssignmentReadyForReview(ctx context.Context, id uuid.UUID) (*Assignment, error) {
 	row := q.db.QueryRow(ctx, markAssignmentReadyForReview, id)
 	var i Assignment
@@ -697,10 +515,7 @@ func (q *Queries) MarkAssignmentReadyForReview(ctx context.Context, id uuid.UUID
 		&i.ID,
 		&i.PatientID,
 		&i.TestCode,
-		&i.Mode,
 		&i.Status,
-		&i.AssignedBy,
-		&i.DueAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.ReviewedAt,
@@ -708,44 +523,59 @@ func (q *Queries) MarkAssignmentReadyForReview(ctx context.Context, id uuid.UUID
 		&i.IsDeveloperData,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExaminationID,
+		&i.Sequence,
+		&i.Page,
 	)
 	return &i, err
 }
 
-const updateAssignmentDueDate = `-- name: UpdateAssignmentDueDate :one
+const updateAssignmentPage = `-- name: UpdateAssignmentPage :exec
 UPDATE assignments a
-SET due_at = $2
-FROM patients p
-WHERE a.id = $1
-  AND p.id = a.patient_id
-  AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($3)
-RETURNING a.id, a.patient_id, a.test_code, a.mode, a.status, a.assigned_by, a.due_at, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at
+SET page = $1
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE a.id = $2
+  AND a.examination_id = e.id
+  AND (
+      $3::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($3::uuid)
+  )
 `
 
-type UpdateAssignmentDueDateParams struct {
-	ID       uuid.UUID          `json:"id"`
-	DueAt    pgtype.Timestamptz `json:"due_at"`
-	ViewerID uuid.UUID          `json:"viewer_id"`
+type UpdateAssignmentPageParams struct {
+	Page         int32      `json:"page"`
+	AssignmentID uuid.UUID  `json:"assignment_id"`
+	ViewerID     *uuid.UUID `json:"viewer_id"`
 }
 
-func (q *Queries) UpdateAssignmentDueDate(ctx context.Context, arg UpdateAssignmentDueDateParams) (*Assignment, error) {
-	row := q.db.QueryRow(ctx, updateAssignmentDueDate, arg.ID, arg.DueAt, arg.ViewerID)
-	var i Assignment
-	err := row.Scan(
-		&i.ID,
-		&i.PatientID,
-		&i.TestCode,
-		&i.Mode,
-		&i.Status,
-		&i.AssignedBy,
-		&i.DueAt,
-		&i.StartedAt,
-		&i.CompletedAt,
-		&i.ReviewedAt,
-		&i.ReviewedBy,
-		&i.IsDeveloperData,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) UpdateAssignmentPage(ctx context.Context, arg UpdateAssignmentPageParams) error {
+	_, err := q.db.Exec(ctx, updateAssignmentPage, arg.Page, arg.AssignmentID, arg.ViewerID)
+	return err
+}
+
+const updateAssignmentSequence = `-- name: UpdateAssignmentSequence :exec
+UPDATE assignments a
+SET sequence = $1
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE a.id = $2
+  AND a.examination_id = e.id
+  AND (
+      $3::uuid IS NULL
+      OR (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+          = is_developer_user($3::uuid)
+  )
+`
+
+type UpdateAssignmentSequenceParams struct {
+	NewSequence  int16      `json:"new_sequence"`
+	AssignmentID uuid.UUID  `json:"assignment_id"`
+	ViewerID     *uuid.UUID `json:"viewer_id"`
+}
+
+func (q *Queries) UpdateAssignmentSequence(ctx context.Context, arg UpdateAssignmentSequenceParams) error {
+	_, err := q.db.Exec(ctx, updateAssignmentSequence, arg.NewSequence, arg.AssignmentID, arg.ViewerID)
+	return err
 }

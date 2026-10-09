@@ -532,35 +532,96 @@ templ Combobox(p ComboboxProps) {
 	</div>
 }
 
-// FilterChipsProps — toggle-able tag chips. Selection is live in Alpine.
+// FilterChipsProps — HTMX-driven multi-select chip row for "filter a list"
+// use cases. Mirrors FilterSelect: Alpine only owns the local toggle UX, while
+// a hidden input carries the HTMX request and re-queries the server on every
+// change. Selection is submitted as CSV through that single input.
 type FilterChipsProps struct {
 	Name    string
 	Label   string
 	Options []string
 	Initial []string
+	URL     string
+	Target  string
+	Swap    string
+	Include string
+	Trigger string
+	PushURL bool
+	Attrs   templ.Attributes
 }
 
-// FilterChips is a multi-select chip row. Submits as CSV.
+// FilterChips re-queries an endpoint via HTMX whenever the selection changes.
 templ FilterChips(p FilterChipsProps) {
+	{{swap := p.Swap
+if swap == "" {
+	swap = "innerHTML"
+}
+	}}
+	{{trigger := p.Trigger
+if trigger == "" {
+	trigger = "change"
+}
+	}}
+	{{inputID := p.Name + "-input"
+indID := p.Name + "-ind"
+	}}
 	<div
-		x-data={ "{ f: " + jsStringArray(p.Initial) + " }" }
+		x-data={ "{ f: " + jsStringArray(p.Initial) + ", " +
+				"toggle(t){ this.f.includes(t) ? this.f = this.f.filter(x => x !== t) : this.f.push(t); this.fire(); }, " +
+				"clear(){ if(!this.f.length) return; this.f = []; this.fire(); }, " +
+				"fire(){ this.$nextTick(() => this.$refs.input.dispatchEvent(new Event('change', {bubbles:true}))); } }" }
+		class="h-fit self-start"
 	>
 		if p.Label != "" {
-			@FieldLabel(p.Label, "")
+			<div class="flex items-center gap-2 mb-1.5">
+				@FieldLabel(p.Label, "")
+				<span id={ indID } class="htmx-indicator spinner" style="width:12px;height:12px;border-width:1.5px"></span>
+			</div>
 		}
-		<div class="flex flex-wrap gap-2">
+		<div class="flex flex-wrap items-center gap-2">
 			for _, t := range p.Options {
 				<button
 					type="button"
-					@click={ "f.includes('" + t + "') ? f = f.filter(x => x !== '" + t + "') : f.push('" + t + "')" }
+					@click={ "toggle('" + t + "')" }
+					:aria-pressed={ "f.includes('" + t + "').toString()" }
 					:class={ "f.includes('" + t + "') ? 'bg-primary text-primary-fg border-primary' : 'border-border text-fg hover:border-primary hover:text-primary'" }
-					class="rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors"
+					class="rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary/40"
 				>
 					{ t }
 				</button>
 			}
+			<button
+				type="button"
+				x-show="f.length"
+				x-cloak
+				x-transition.opacity.duration.100ms
+				@click="clear()"
+				class="inline-flex items-center gap-1 rounded-full border border-error/40 px-2.5 py-1.5 text-xs font-medium text-error hover:bg-error/10"
+				aria-label="Clear filter"
+			>
+				<span aria-hidden="true">×</span>
+				<span>Clear</span>
+			</button>
 		</div>
-		<input type="hidden" name={ p.Name } :value="f.join(',')"/>
+		<input
+			id={ inputID }
+			x-ref="input"
+			type="hidden"
+			name={ p.Name }
+			:value="f.join(',')"
+			hx-get={ p.URL }
+			hx-trigger={ trigger }
+			hx-target={ "#" + p.Target }
+			hx-swap={ swap }
+			if p.PushURL {
+				hx-push-url="true"
+			}
+			if p.Include != "" {
+				hx-include={ p.Include }
+			}
+			hx-indicator={ "#" + indID }
+			{ p.Attrs... }
+		/>
 	</div>
 }
 

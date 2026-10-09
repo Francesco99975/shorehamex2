@@ -11,6 +11,7 @@ import (
 
 	"github.com/Francesco99975/shorehamex2/cmd/boot"
 	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/labstack/echo/v4"
 
 	"github.com/Francesco99975/shorehamex2/internal/database"
@@ -74,7 +75,26 @@ func main() {
 		slog.Info("Local Access", slog.String("url", fmt.Sprintf("http://localhost:%s", port)))
 		slog.Info("Internet Access", slog.String("url", boot.Environment.URL))
 		slog.Info("Press Ctrl+C to stop the server and exit.")
+		if boot.Environment.GoEnv == enums.Environments.DEVELOPMENT {
+			slog.Debug("Loaded environment variables")
+			slog.Debug("Environment URL", slog.String("url", boot.Environment.URL))
+			slog.Debug("Environment DSN", slog.String("dsn", boot.Environment.DSN))
+			slog.Debug("Environment GoEnv", slog.String("go_env", boot.Environment.GoEnv.String()))
+			slog.Debug("Environment DevEmail", slog.String("dev_email", boot.Environment.DevEmail))
+			slog.Debug("Environment Port", slog.String("port", boot.Environment.Port))
+			slog.Debug("Environment Host", slog.String("host", boot.Environment.Host))
+			slog.Debug("Environment PostgresUser", slog.String("postgres_user", boot.Environment.PostgresUser))
+			slog.Debug("Environment TwofaKey", slog.String("twofa_key", boot.Environment.TwofaKey))
+			slog.Debug("Environment TwofaKeyOld", slog.String("twofa_key_old", boot.Environment.TwofaKeyOld))
+			slog.Debug("Environment PaginationWindow", slog.Int("pagination_window", boot.Environment.PaginationWindow))
+			slog.Debug("Environment NTFY", slog.String("ntfy", boot.Environment.NTFY))
+			slog.Debug("Environment NTFYToken", slog.String("ntfy_token", boot.Environment.NTFYToken))
+			slog.Debug("Environment ResendApiKey", slog.String("resend_api_key", boot.Environment.ResendApiKey))
+			slog.Debug("Environment MetricSecret", slog.String("metric_secret", boot.Environment.MetricSecret))
+			slog.Debug("Environment Prometheus", slog.String("prometheus", boot.Environment.Prometheus))
+		}
 		err := e.Start(":" + port)
+
 		boot.FatalLog("Server exited, could not start", err)
 	}()
 

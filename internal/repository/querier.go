@@ -15,32 +15,38 @@ type Querier interface {
 	CleanupExpiredEmailVerifications(ctx context.Context) error
 	CleanupExpiredPasswordResets(ctx context.Context) error
 	CleanupInactiveUsers(ctx context.Context) error
-	// A clinician confirming the review — reviewer_id doubles as both
-	// "who reviewed this" and "who's asking" for the partition check, since
-	// in every real flow they're the same person.
 	CompleteAssignmentReview(ctx context.Context, arg CompleteAssignmentReviewParams) (*Assignment, error)
-	// Patient-facing: marks the token used at the moment they actually
-	// start/submit their assessment. Re-checks validity in the same
-	// statement (not just relying on a prior GetRemoteAccessTokenByHash
-	// call) to close the race where two requests redeem the same link at
-	// once — only one can win. Returns zero rows if it was already
-	// used/revoked/expired between the two calls.
+	// Patient-facing: mark used. Lookup by hash again to close races.
 	ConsumeRemoteAccessToken(ctx context.Context, tokenHash string) (*RemoteAccessToken, error)
-	// For a small "N active tests" badge on a patient's row/header.
 	CountActiveAssignmentsForPatient(ctx context.Context, arg CountActiveAssignmentsForPatientParams) (int64, error)
 	// Backs a dashboard "Active patients" stat. For a developer viewer,
 	// this counts only their team's developer-flagged patients — real
 	// patients are entirely outside a developer's view, by design.
-	CountActivePatients(ctx context.Context, viewerID uuid.UUID) (int64, error)
-	// Backs the dashboard's "Awaiting review" stat card.
-	CountAssignmentsAwaitingReview(ctx context.Context, viewerID uuid.UUID) (int64, error)
-	// Backs the dashboard's "Completed (7d)"-style stat card; pass
-	// NOW() - INTERVAL '7 days' (or whatever window) as $1.
+	CountActivePatients(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	CountAssignmentsAwaitingReview(ctx context.Context, viewerID *uuid.UUID) (int64, error)
 	CountAssignmentsCompletedSince(ctx context.Context, arg CountAssignmentsCompletedSinceParams) (int64, error)
-	// Backs the dashboard's "In progress" stat card.
-	CountAssignmentsInProgress(ctx context.Context, viewerID uuid.UUID) (int64, error)
-	// For a small "3 reminders sent" badge/tooltip.
-	CountRemindersForAssignment(ctx context.Context, arg CountRemindersForAssignmentParams) (int64, error)
+	CountAssignmentsInProgress(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	// examinations.sql
+	//
+	// sqlc queries for the examinations table and its relationship to assignments.
+	//
+	// Partition rule (same as the rest of the app):
+	//   (e.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
+	//
+	// Examination status is the 3-value enum:
+	//   ASSIGNED | IN_PROGRESS | COMPLETED
+	// Assignment status remains the original 4-value enum.
+	// =============================================================================
+	// Create
+	// =============================================================================
+	CountExaminations(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	CountExaminationsAwaitingReview(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	// =============================================================================
+	// Counts / badges (dashboard)
+	// =============================================================================
+	CountExaminationsByStatus(ctx context.Context, viewerID *uuid.UUID) ([]*CountExaminationsByStatusRow, error)
+	CountOverdueExaminations(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	CountRemindersForExamination(ctx context.Context, arg CountRemindersForExaminationParams) (int64, error)
 	CountRoles(ctx context.Context) (int64, error)
 	// How many assignments reference this instrument. The Developer CRUD
 	// screen should call this before offering a hard delete — a non-zero
@@ -48,42 +54,27 @@ type Querier interface {
 	// should steer toward SetTestDefinitionActive(false) instead.
 	CountTestDefinitionAssignments(ctx context.Context, testCode string) (int64, error)
 	CountUnusedBackupCodesForUser(ctx context.Context, userID uuid.UUID) (int64, error)
-	// is_developer_data is NOT a column here — stamped automatically by
-	// trigger_mark_assignment_developer_data based on assigned_by's role.
-	// Also implicitly needs a matching assignment_results envelope row —
-	// see CreateAssignmentResult in assignment_results.sql, called
-	// immediately after this in the same transaction (kept as two queries,
-	// not one, since assignment_results.sql owns that table's shape).
+	// is_developer_data is stamped by trigger from the parent examination.
+	// mode / due_at / assigned_by live on the examination.
+	// page defaults to 1 when not supplied.
 	CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (*Assignment, error)
+	// Insert one instrument into an existing examination at a given sequence.
+	CreateAssignmentInExamination(ctx context.Context, arg CreateAssignmentInExaminationParams) (*Assignment, error)
 	// assignment_reminders.sql
 	//
 	// sqlc queries for the assignment_reminders table — just an audit trail
 	// of "Send reminder" events, no scoring/state-machine logic here.
 	//
-	// Same inherited-partition pattern as remote_access_tokens.sql (this
-	// table has no is_developer_data column of its own; visibility comes
-	// via join to assignments/patients):
-	//     (a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
-	// applies to the staff-facing queries (CreateAssignmentReminder and the
-	// list/count/throttle-check reads).
+	// After the examinations migration, reminders belong to an examination
+	// (the delivery unit that owns the remote link and due_at), not to an
+	// individual assignment.
 	//
-	// ListAssignmentsDueForReminder is different from every other query in
-	// this file: it's meant to be called by a scheduled job, not a logged-
-	// in staff member, so there's no viewer_id to check against — same
-	// reasoning as MarkAssignmentReadyForReview in assignments.sql. But
-	// unlike that query, this one still can't just skip the partition
-	// question entirely: an automated job blasting reminder emails should
-	// never pick up developer test assignments (which likely don't even
-	// have real email addresses behind them), so it hard-excludes
-	// is_developer_data rows unconditionally, rather than gating on who's
-	// asking.
+	// Same inherited-partition pattern as remote_access_tokens.sql:
+	//     (e.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
 	//
-	// sent_by is nullable on the table itself specifically so this file can
-	// distinguish a human-initiated reminder from a scheduled one — see
-	// CreateAssignmentReminder vs CreateSystemAssignmentReminder.
-	// A staff member clicking "Send reminder". sent_by is the clicking
-	// user, who also doubles as the viewer for the partition check (same
-	// reasoning as reviewer_id in assignments.CompleteAssignmentReview).
+	// ListExaminationsDueForReminder is meant for a scheduled job, so it
+	// has no viewer_id and hard-excludes developer data.
+	// Staff member clicking "Send reminder".
 	CreateAssignmentReminder(ctx context.Context, arg CreateAssignmentReminderParams) (*AssignmentReminder, error)
 	// assignment_results.sql
 	//
@@ -160,6 +151,7 @@ type Querier interface {
 	CreateAssignmentResult(ctx context.Context, arg CreateAssignmentResultParams) (*AssignmentResult, error)
 	CreateBackupCodes(ctx context.Context, arg CreateBackupCodesParams) error
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (*CreateEmailVerificationRow, error)
+	CreateExamination(ctx context.Context, arg CreateExaminationParams) (*CreateExaminationRow, error)
 	// Bulk insert for one MMPI result's full set of per-category narrative
 	// indications. Same jsonb_to_recordset() pattern as CreateMMPIScales —
 	// sqlc.arg(indications) is a single JSONB array, one object per
@@ -193,10 +185,7 @@ type Querier interface {
 	// results use CreateMMPIScales/CreateMMPIIndications instead. No
 	// viewer_id — see header comment.
 	CreateSumBandResult(ctx context.Context, arg CreateSumBandResultParams) (*AssignmentSumBandResult, error)
-	// A scheduled job's automated reminder — sent_by is left NULL (no
-	// human triggered this), and there's deliberately no partition check
-	// here: by the time this is called, the assignment_id already came from
-	// ListAssignmentsDueForReminder, which already excluded developer data.
+	// Scheduled job automated reminder — sent_by is NULL.
 	CreateSystemAssignmentReminder(ctx context.Context, arg CreateSystemAssignmentReminderParams) (*AssignmentReminder, error)
 	// Adds a new instrument row after its JSON file has been authored and
 	// placed at source_path. version starts at 1; is_active defaults to
@@ -207,13 +196,15 @@ type Querier interface {
 	CreateUserSession(ctx context.Context, arg CreateUserSessionParams) (*Session, error)
 	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	DeleteAllRoles(ctx context.Context) error
-	// Hard delete, no status restriction — scoped only by the same
-	// partition rule as every other query here, NOT developer-only. Same
-	// flag as patients.DeletePatient: this removes any append-only/
-	// retention protection on real assignment/result history if that
-	// matters for real clinical data.
 	DeleteAssignment(ctx context.Context, arg DeleteAssignmentParams) error
+	DeleteAssignmentFromExamination(ctx context.Context, arg DeleteAssignmentFromExaminationParams) error
 	DeleteEmailVerificationByUserID(ctx context.Context, userID uuid.UUID) error
+	// =============================================================================
+	// Delete
+	// =============================================================================
+	// Cascades to assignments, results, tokens, reminders via FK.
+	// Returns the total number of examinations remaining in the table after this delete.
+	DeleteExamination(ctx context.Context, arg DeleteExaminationParams) (int32, error)
 	DeleteExpiredPendingAuthChallenges(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeletePasswordResetByUserID(ctx context.Context, userID uuid.UUID) error
@@ -235,12 +226,6 @@ type Querier interface {
 	// call when CountTestDefinitionAssignments returns 0; otherwise use
 	// SetTestDefinitionActive to retire it instead.
 	DeleteTestDefinition(ctx context.Context, code string) error
-	// Safe, reversible-in-spirit correction path for a real mistake (wrong
-	// test assigned to the wrong patient). Restricted to status =
-	// 'ASSIGNED': once a patient has answered even one item, use
-	// DeleteAssignment instead, which has no such restriction. Unrestricted
-	// by role beyond the usual partition check — any ADMIN/USER can use
-	// this on a real assignment, any developer on a developer-flagged one.
 	DeleteUnstartedAssignment(ctx context.Context, arg DeleteUnstartedAssignmentParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeleteUserBackupCodes(ctx context.Context, userID uuid.UUID) error
@@ -255,46 +240,30 @@ type Querier interface {
 	// mechanism discussed separately (assignment_page_timings). No
 	// viewer_id — see header comment.
 	FinalizeAssignmentResultScoring(ctx context.Context, arg FinalizeAssignmentResultScoringParams) (*AssignmentResult, error)
-	// The currently usable token for an assignment, if any — backs a "link
-	// sent 2 days ago, expires in 5 days" display, and lets the app decide
-	// whether a "Send" or "Resend" action is appropriate.
+	// Staff: show/copy/resend. Decrypt token_encrypted in the app.
 	GetActiveRemoteAccessToken(ctx context.Context, arg GetActiveRemoteAccessTokenParams) (*RemoteAccessToken, error)
 	GetActiveSession(ctx context.Context, sessionTokenHash string) (*GetActiveSessionRow, error)
 	GetActiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 	// assignments.sql
 	//
-	// sqlc queries for the assignments table.
+	// sqlc queries for the assignments table (individual instruments
+	// inside an examination).
 	//
-	// Visibility/CRUD rule — same strict partition as patients.sql:
-	//     (a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
-	// An assignment is in the developer partition if EITHER the assignment
-	// itself OR its patient is developer-flagged (a developer can create a
-	// throwaway assignment against an otherwise-real, ADMIN/USER-visible
-	// patient — that assignment alone still belongs entirely to the
-	// developer partition). ADMIN/USER viewers only ever see/manage
-	// assignments fully outside that partition; DEVELOPER viewers only
-	// ever see/manage assignments inside it. Every query below joins
-	// patients as `p` for this reason, even ones that don't otherwise need
-	// patient columns — one uniform predicate shape across the whole file.
+	// Visibility rule — join through examinations + patients:
+	//     (a.is_developer_data OR e.is_developer_data OR p.is_developer_data)
+	//         = is_developer_user(viewer_id)
+	// In practice a.is_developer_data is stamped from the parent examination,
+	// so the examination/patient flags are the real gate.
 	//
-	// Status lifecycle assumed here: ASSIGNED -> IN_PROGRESS (auto, on
-	// first response — see mark_assignment_started_on_response trigger) ->
-	// READY_FOR_REVIEW (set by the app once the scoring engine finishes
-	// scoring all responses) -> COMPLETED (set once a clinician confirms
-	// the review). "Overdue" is not a status value — it's
-	// (due_at < now() AND status <> 'COMPLETED'), same as the partial index
-	// on assignments(due_at).
+	// Status lifecycle (per instrument):
+	//   ASSIGNED → IN_PROGRESS (trigger on first response)
+	//            → READY_FOR_REVIEW (scoring pipeline)
+	//            → COMPLETED (clinician confirms review)
 	//
-	// MarkAssignmentReadyForReview is the one write query here WITHOUT a
-	// viewer/partition check: it's called by the scoring pipeline itself
-	// right after computing scores, not by a user clicking something in the
-	// UI, so there's no "viewer" to check against — it should transition
-	// any assignment, real or developer-flagged, accurately.
-	//
-	// Both DeleteUnstartedAssignment and DeleteAssignment are unrestricted
-	// within a viewer's own partition (no developer-only carve-out) — see
-	// patients.sql's header comment for the same flag on DeletePatient.
+	// mode / due_at / assigned_by live on examinations, not here.
+	// page defaults to 1 (tracks the current page within a multi-page instrument).
 	GetAssignment(ctx context.Context, arg GetAssignmentParams) (*Assignment, error)
+	GetAssignmentInExamination(ctx context.Context, arg GetAssignmentInExaminationParams) (*Assignment, error)
 	GetAssignmentResult(ctx context.Context, arg GetAssignmentResultParams) (*AssignmentResult, error)
 	// Patient-facing: fetch current responses/progress to resume an
 	// in-progress assessment (remote or in-clinic). No viewer_id — see
@@ -304,10 +273,15 @@ type Querier interface {
 	GetEmailVerificationByID(ctx context.Context, id uuid.UUID) (*GetEmailVerificationByIDRow, error)
 	GetEmailVerificationByToken(ctx context.Context, token string) (*GetEmailVerificationByTokenRow, error)
 	GetEmailVerificationByUserID(ctx context.Context, userID uuid.UUID) (*GetEmailVerificationByUserIDRow, error)
-	// For a UI throttle ("last reminder sent 2h ago, try again after 24h")
-	// or to decide whether to grey out the "Send reminder" button. NULL if
-	// none have ever been sent.
+	// =============================================================================
+	// Read – single
+	// =============================================================================
+	GetExamination(ctx context.Context, arg GetExaminationParams) (*Examination, error)
+	GetExaminationWithPatient(ctx context.Context, arg GetExaminationWithPatientParams) (*GetExaminationWithPatientRow, error)
 	GetLastReminderSentAt(ctx context.Context, arg GetLastReminderSentAtParams) (pgtype.Timestamptz, error)
+	GetNextAssignment(ctx context.Context, arg GetNextAssignmentParams) (*Assignment, error)
+	// Resume helper: first incomplete assignment in sequence order.
+	GetNextAssignmentInExamination(ctx context.Context, arg GetNextAssignmentInExaminationParams) (*Assignment, error)
 	GetPasswordHash(ctx context.Context, id uuid.UUID) (string, error)
 	GetPasswordResetByToken(ctx context.Context, token string) (*PasswordReset, error)
 	// patients.sql
@@ -346,19 +320,15 @@ type Querier interface {
 	GetPatientByMRN(ctx context.Context, arg GetPatientByMRNParams) (*Patient, error)
 	GetPendingAuthChallenge(ctx context.Context, id uuid.UUID) (*PendingAuthChallenge, error)
 	GetPendingAuthChallengeByUser(ctx context.Context, arg GetPendingAuthChallengeByUserParams) (*PendingAuthChallenge, error)
-	// Patient-facing: looks up the token the patient's link decoded to
-	// (already hashed by the app before this query runs — never look up by
-	// raw token). No viewer_id — see header comment. Only returns a row if
-	// the token is actually still usable; an expired/used/revoked token
-	// simply doesn't match, which the app should treat as "this link is no
-	// longer valid" without distinguishing why.
+	// Patient-facing: app hashes the URL token, then looks up by hash.
+	// No viewer_id.
 	GetRemoteAccessTokenByHash(ctx context.Context, tokenHash string) (*RemoteAccessToken, error)
 	GetRoleByID(ctx context.Context, id string) (*Role, error)
 	GetRoleById(ctx context.Context, id string) (*Role, error)
 	// The single most useful read for rendering a SUM_BANDED result screen:
 	// joins straight from assignment_id to the envelope and the display
 	// fields, no need to look up assignment_result_id first.
-	GetSumBandResultForAssignment(ctx context.Context, arg GetSumBandResultForAssignmentParams) (*GetSumBandResultForAssignmentRow, error)
+	GetSumBandResultsForAssignment(ctx context.Context, arg GetSumBandResultsForAssignmentParams) ([]*GetSumBandResultsForAssignmentRow, error)
 	// test_definitions.sql
 	//
 	// sqlc queries for the test_definitions table (the instrument catalog).
@@ -408,40 +378,50 @@ type Querier interface {
 	GetUsersByRole(ctx context.Context, arg GetUsersByRoleParams) ([]*GetUsersByRoleRow, error)
 	GetUsersByRoleCount(ctx context.Context, role string) (int64, error)
 	GetUsersCount(ctx context.Context) (int64, error)
+	IncrementAssignmentDuration(ctx context.Context, arg IncrementAssignmentDurationParams) (*AssignmentResult, error)
+	IncrementAssignmentPage(ctx context.Context, arg IncrementAssignmentPageParams) (*Assignment, error)
 	// One assignment's full history (created, started, ready for review,
 	// reviewed, links sent, reminders sent), most recent first.
 	ListActivityForAssignment(ctx context.Context, arg ListActivityForAssignmentParams) ([]*ListActivityForAssignmentRow, error)
 	// One patient's timeline (patient detail view), most recent first.
 	ListActivityForPatient(ctx context.Context, arg ListActivityForPatientParams) ([]*ListActivityForPatientRow, error)
-	// Dashboard-wide "needs your attention" list, oldest-waiting-first.
-	// Joins patient name too, since this spans multiple patients. For a
-	// developer viewer, this is scoped entirely to their team's test
-	// assignments, same as everything else in this file.
-	ListAssignmentsAwaitingReview(ctx context.Context, arg ListAssignmentsAwaitingReviewParams) ([]*ListAssignmentsAwaitingReviewRow, error)
-	// For a scheduled job: not-yet-completed assignments due on or before
-	// sqlc.arg(due_before), whose most recent reminder (if any) is older
-	// than sqlc.arg(reminder_cutoff) — i.e. either never reminded, or not
-	// reminded recently enough to remind again. Always excludes developer
-	// test data (see header comment) regardless of who/what calls this.
-	ListAssignmentsDueForReminder(ctx context.Context, arg ListAssignmentsDueForReminderParams) ([]*ListAssignmentsDueForReminderRow, error)
-	// Powers the patient detail view's assignment list. Joins
-	// test_definitions for display name so the UI doesn't need a second
-	// round trip per row.
-	ListAssignmentsForPatient(ctx context.Context, arg ListAssignmentsForPatientParams) ([]*ListAssignmentsForPatientRow, error)
-	// Backs the patient detail view's status filter tabs (In progress /
-	// Ready to review / Complete). For the "Overdue" tab, use
-	// ListOverdueAssignmentsForPatient instead — overdue cuts across
-	// multiple statuses, it isn't one itself.
-	ListAssignmentsForPatientByStatus(ctx context.Context, arg ListAssignmentsForPatientByStatusParams) ([]*ListAssignmentsForPatientByStatusRow, error)
+	ListAssignmentsForExamination(ctx context.Context, arg ListAssignmentsForExaminationParams) ([]*ListAssignmentsForExaminationRow, error)
+	// Unified list for the Examinations page, dashboard "needs attention",
+	// and patient-detail examination history.
+	//
+	// Filters (all optional / nullable):
+	//   patient_id            – scope to one patient
+	//   status                – exact examination_status (ASSIGNED|IN_PROGRESS|COMPLETED)
+	//   only_overdue          – true → status <> 'COMPLETED' AND due_at < NOW()
+	//   only_awaiting_review  – true → at least one child assignment is READY_FOR_REVIEW
+	//
+	// When only_overdue or only_awaiting_review is true the status filter is ignored.
+	//
+	// Ordering:
+	//   overdue            → due_at ASC
+	//   awaiting review    → completed_at ASC
+	//   everything else    → created_at DESC
+	//
+	// Extra columns for the ExaminationItem component:
+	//   assignment_chips  JSONB  – ordered array of
+	//       [{"test_code":"BDI","completed":true}, {"test_code":"BAI","completed":false}, ...]
+	//       One chip per assignment; "ON" when completed, "OFF" otherwise.
+	//   tests_total       INT
+	//   tests_completed   INT
+	//   remote_token      BYTEA  – the single active token_encrypted (or NULL)
+	//   patient_name, patient_mrn
+	//
+	ListExaminations(ctx context.Context, arg ListExaminationsParams) ([]*ListExaminationsRow, error)
+	// Scheduled job: not-yet-completed examinations due on or before
+	// due_before, whose most recent reminder (if any) is older than
+	// reminder_cutoff. Always excludes developer test data.
+	ListExaminationsDueForReminder(ctx context.Context, arg ListExaminationsDueForReminderParams) ([]*ListExaminationsDueForReminderRow, error)
 	ListMMPIIndicationsForResult(ctx context.Context, arg ListMMPIIndicationsForResultParams) ([]*AssignmentMmpiIndication, error)
 	// Flat, ordered fetch of every scale/subscale row for one result. The
 	// app reconstructs the category/parent-child tree client-side from
 	// category_title + parent_scale_id + id — display_order already
 	// reflects the intended render sequence.
 	ListMMPIScalesForResult(ctx context.Context, arg ListMMPIScalesForResultParams) ([]*AssignmentMmpiScale, error)
-	// Dashboard-wide overdue list, same shape as ListAssignmentsAwaitingReview.
-	ListOverdueAssignments(ctx context.Context, arg ListOverdueAssignmentsParams) ([]*ListOverdueAssignmentsRow, error)
-	ListOverdueAssignmentsForPatient(ctx context.Context, arg ListOverdueAssignmentsForPatientParams) ([]*ListOverdueAssignmentsForPatientRow, error)
 	// Main patient directory. Alphabetical by name; swap to
 	// last_activity_at DESC if the roster should read more like a worklist
 	// than a directory — a judgment call, easy to flip either way.
@@ -451,12 +431,8 @@ type Querier interface {
 	ListPatientsByStatus(ctx context.Context, arg ListPatientsByStatusParams) ([]*Patient, error)
 	// Dashboard-wide "Recent activity" feed, most recent first.
 	ListRecentActivity(ctx context.Context, arg ListRecentActivityParams) ([]*ListRecentActivityRow, error)
-	// Audit trail for one assignment. sent_by NULL means it was an
-	// automated reminder, not a specific staff member's click.
-	ListRemindersForAssignment(ctx context.Context, arg ListRemindersForAssignmentParams) ([]*AssignmentReminder, error)
-	// Full send/resend history for an assignment (audit trail — "link sent,
-	// then resent twice, then used").
-	ListRemoteAccessTokensForAssignment(ctx context.Context, arg ListRemoteAccessTokensForAssignmentParams) ([]*RemoteAccessToken, error)
+	ListRemindersForExamination(ctx context.Context, arg ListRemindersForExaminationParams) ([]*AssignmentReminder, error)
+	ListRemoteAccessTokensForExamination(ctx context.Context, arg ListRemoteAccessTokensForExaminationParams) ([]*RemoteAccessToken, error)
 	ListRoles(ctx context.Context) ([]*Role, error)
 	// One scale's score across every MMPI assignment a patient has ever
 	// had, oldest first — for a "D scale over time" trend chart. This is
@@ -496,13 +472,12 @@ type Querier interface {
 	// is_developer_data and actor_id are computed identically to every
 	// trigger-driven row.
 	LogActivityEvent(ctx context.Context, arg LogActivityEventParams) error
-	// Called by the scoring pipeline once every response is in and scored —
-	// see the header comment for why this skips the viewer/partition check.
-	// Guarded by the current status so it can't be called out of order
-	// (e.g. twice, or on something already COMPLETED).
+	// Scoring pipeline — no viewer/partition check.
 	MarkAssignmentReadyForReview(ctx context.Context, id uuid.UUID) (*Assignment, error)
 	MarkBackupCodeUsed(ctx context.Context, id uuid.UUID) error
 	MarkEmailVerificationUsed(ctx context.Context, token string) error
+	MarkExaminationCompleted(ctx context.Context, arg MarkExaminationCompletedParams) (*Examination, error)
+	MarkExaminationReviewed(ctx context.Context, arg MarkExaminationReviewedParams) (*Examination, error)
 	MarkPasswordResetUsed(ctx context.Context, token string) error
 	PromoteChallengeToRegistration(ctx context.Context, arg PromoteChallengeToRegistrationParams) (*PendingAuthChallenge, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
@@ -511,14 +486,8 @@ type Querier interface {
 	// 1, so a Developer glancing at the row can tell the file was
 	// re-imported without needing to diff checksums by hand.
 	RefreshTestDefinitionSource(ctx context.Context, arg RefreshTestDefinitionSourceParams) (*TestDefinition, error)
-	// "Resend link" action: atomically revokes the current active token (if
-	// any) and issues a new one, carrying resend_count forward + 1. If
-	// there's no active token to revoke (e.g. it already expired), this
-	// still issues a fresh one at resend_count 0 — a resend on an already-
-	// lapsed link is effectively a new send.
+	// Revoke active token (if any) and insert a new one (new hash + new ciphertext).
 	ResendRemoteAccessToken(ctx context.Context, arg ResendRemoteAccessTokenParams) (*RemoteAccessToken, error)
-	// Standalone "invalidate this link" action (e.g. patient reports the
-	// email was compromised), independent of sending a replacement.
 	RevokeActiveRemoteAccessToken(ctx context.Context, arg RevokeActiveRemoteAccessTokenParams) error
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	RevokeAllUserSessionsExcept(ctx context.Context, arg RevokeAllUserSessionsExceptParams) error
@@ -537,39 +506,14 @@ type Querier interface {
 	SearchUsers(ctx context.Context, arg SearchUsersParams) ([]*SearchUsersRow, error)
 	// remote_access_tokens.sql
 	//
-	// sqlc queries for the remote_access_tokens table.
+	// Dual storage:
+	//   token_hash      → patient auth (lookup by hash of presented token)
+	//   token_encrypted → staff recovery (decrypt to resend the same link)
 	//
-	// Two different access models in this one file:
-	//
-	// 1. Staff-facing queries (send/resend/revoke/list/get-active) are used
-	//    by an authenticated clinician or developer through the app, so
-	//    they carry the same partition rule as patients.sql/assignments.sql
-	//    — inherited via join, since this table has no is_developer_data
-	//    column of its own:
-	//        (a.is_developer_data OR p.is_developer_data) = is_developer_user(viewer_id)
-	//
-	// 2. Patient-facing queries (GetRemoteAccessTokenByHash,
-	//    ConsumeRemoteAccessToken) are used by a patient who followed a
-	//    secret emailed link — there's no logged-in app user/role in that
-	//    flow at all, so there's deliberately NO viewer_id or partition
-	//    check on these two. Validity is entirely about the token itself
-	//    (unused, unrevoked, unexpired), same idea as
-	//    MarkAssignmentReadyForReview having no viewer check in
-	//    assignments.sql — no human "viewer" exists in that code path to
-	//    check against.
-	//
-	// Only one usable ("active") token can exist per assignment at a time —
-	// enforced by idx_remote_access_tokens_active (a partial unique index
-	// on assignment_id WHERE used_at IS NULL AND NOT revoked). That's why
-	// ResendRemoteAccessToken revokes the current active token and inserts
-	// the replacement in one atomic statement (a writable CTE) — doing it
-	// as two round trips would risk a moment where either both or neither
-	// token is active.
-	// Initial "Send link" action — there should be no existing active token
-	// yet. If one exists, the unique partial index rejects this with a
-	// constraint violation; the app should have already checked via
-	// GetActiveRemoteAccessToken and called ResendRemoteAccessToken instead.
+	// Tokens belong to an examination (one active link per delivery unit).
+	// Partial unique index: at most one active token per examination.
 	SendRemoteAccessToken(ctx context.Context, arg SendRemoteAccessTokenParams) (*RemoteAccessToken, error)
+	SetActorID(ctx context.Context, setConfig string) error
 	// Archive/reactivate — the safe, reversible removal path.
 	SetPatientActive(ctx context.Context, arg SetPatientActiveParams) (*Patient, error)
 	// Retire/reactivate toggle — a quick action on the CRUD screen's list
@@ -579,13 +523,23 @@ type Querier interface {
 	// in ListActiveTestDefinitions and can't be picked for new assignments.
 	SetTestDefinitionActive(ctx context.Context, arg SetTestDefinitionActiveParams) (*TestDefinition, error)
 	TouchSession(ctx context.Context, id uuid.UUID) error
-	UpdateAssignmentDueDate(ctx context.Context, arg UpdateAssignmentDueDateParams) (*Assignment, error)
+	// Updates the duration_seconds field for an assignment result.
+	UpdateAssignmentDuration(ctx context.Context, arg UpdateAssignmentDurationParams) (*AssignmentResult, error)
+	UpdateAssignmentPage(ctx context.Context, arg UpdateAssignmentPageParams) error
 	// Merges newly-answered items into responses (item_key -> answer).
 	// Fires mark_assignment_started_on_response (assignments.sql's header
 	// comment) as a side effect — that trigger flips ASSIGNED -> IN_PROGRESS
 	// and sets started_at the first time this runs for an assignment.
 	// No viewer_id — see header comment.
 	UpdateAssignmentResponses(ctx context.Context, arg UpdateAssignmentResponsesParams) (*AssignmentResult, error)
+	// Appends newly-answered items onto the "answers" array inside responses.
+	// Fires mark_assignment_started_on_response as a side effect.
+	UpdateAssignmentResponsesMMPI(ctx context.Context, arg UpdateAssignmentResponsesMMPIParams) (*AssignmentResult, error)
+	UpdateAssignmentSequence(ctx context.Context, arg UpdateAssignmentSequenceParams) error
+	// =============================================================================
+	// Updates
+	// =============================================================================
+	UpdateExaminationDueAt(ctx context.Context, arg UpdateExaminationDueAtParams) (*Examination, error)
 	UpdatePatientDetails(ctx context.Context, arg UpdatePatientDetailsParams) (*Patient, error)
 	UpdateRole(ctx context.Context, arg UpdateRoleParams) (*Role, error)
 	// Edits the catalog-facing facts a Developer would change by hand in

@@ -1,0 +1,79 @@
+package assignments
+
+import (
+
+	"strconv"
+	"time"
+	"github.com/Francesco99975/shorehamex2/cmd/boot"
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+templ MMPI(site config.Site, questions []string, page int, path string) {
+	@layouts.Base(site) {
+		<main class="flex-1 w-full px-4 py-6 md:py-8">
+			<div class="max-w-4xl mx-auto">
+				<div class="bg-surface border border-border rounded-2xl shadow-md overflow-hidden">
+					<div class="bg-primary p-6 md:p-8">
+						<h1 class="text-3xl md:text-4xl font-bold text-primary-foreground text-center text-balance">
+							MMPI-2
+						</h1>
+					</div>
+					<form
+						id="fq"
+						class="p-4 md:p-8"
+						hx-post={ path }
+						hx-indicator="#indicator"
+					>
+						@MMPIFormPartial(questions, page, site.CSRF, site.Nonce)
+					</form>
+				</div>
+			</div>
+		</main>
+	}
+}
+
+templ MMPIFormPartial(questions []string, page int, csrf string, nonce string) {
+	<input type="hidden" name="start" id="start" value={ time.Now().Unix() }/>
+	<input type="hidden" id="page" name="page" value={ strconv.Itoa(page) }/>
+	<div class="flex justify-center mb-6">
+		<span class="inline-flex items-center px-4 py-2 bg-primary/10 border border-primary/30 rounded-full text-primary text-sm font-semibold">
+			Page { strconv.Itoa(page) } of 23
+		</span>
+	</div>
+	<div class="space-y-4 mb-8">
+		for index, question := range questions {
+			<div class="p-4 md:p-6 bg-background border border-border rounded-xl hover:border-primary hover:shadow-md transition-all duration-200">
+				<div class="flex items-start gap-3 md:gap-4">
+					<span class="flex-shrink-0 w-8 h-8 bg-primary/10 text-primary rounded-full flex items-center justify-center text-sm font-semibold">
+						{ strconv.Itoa(index + 1 + ((page - 1) * 25)) }
+					</span>
+					<div class="flex-1 min-w-0">
+						@ui.BoolRadioField(strconv.Itoa(page)+"A"+strconv.Itoa(index), question, !(boot.Environment.GoEnv == "development"))
+					</div>
+				</div>
+			</div>
+		}
+	</div>
+	@components.CSRF(csrf)
+	@ui.Button(ui.ButtonProps{
+		Variant: ui.ButtonPrimary,
+		Size:    ui.ButtonLG,
+		Type:    ui.TypeSubmit,
+		FullW:   true,
+	}) {
+		if page == 23 {
+			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+			</svg>
+			<span>Submit Test</span>
+		} else {
+			<span>Continue to page { strconv.Itoa(page + 1) } / 23</span>
+			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+			</svg>
+		}
+	}
+}

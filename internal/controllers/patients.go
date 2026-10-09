@@ -19,6 +19,7 @@ import (
 	"github.com/Francesco99975/shorehamex2/internal/repository"
 	"github.com/Francesco99975/shorehamex2/views"
 	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/ui"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -53,7 +54,7 @@ func Patients() echo.HandlerFunc {
 		slog.Debug("Authenticated user ID", slog.String("userID", userID.String()))
 
 		rawPatients, err := repo.ListPatients(c.Request().Context(), repository.ListPatientsParams{
-			ViewerID:  userID,
+			ViewerID:  &userID,
 			RowOffset: 0,
 			RowLimit:  25,
 		})
@@ -61,7 +62,7 @@ func Patients() echo.HandlerFunc {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
 		}
 
-		numberOfPatients, err := repo.CountActivePatients(c.Request().Context(), userID)
+		numberOfPatients, err := repo.CountActivePatients(c.Request().Context(), &userID)
 		if err != nil {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
 		}
@@ -119,12 +120,7 @@ func SearchPatients() echo.HandlerFunc {
 
 		ctx := c.Request().Context()
 
-		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
-		if err != nil {
-			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get transaction: %v", err))
-		}
-		defer database.HandleTransaction(ctx, tx, &err)
-		repo := repository.New(tx)
+		repo := repository.New(database.Pool())
 
 		auser, err := auth.GetActiveSession(c.Request(), repo)
 		if err != nil {
@@ -139,13 +135,13 @@ func SearchPatients() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
 		}
 
-		numberOfPatients, err := repo.CountActivePatients(ctx, auserUUID)
+		numberOfPatients, err := repo.CountActivePatients(ctx, &auserUUID)
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to count active patients: %v", err))
 		}
 
 		rawPatients, err := repo.SearchPatients(ctx, repository.SearchPatientsParams{
-			ViewerID: auserUUID,
+			ViewerID: &auserUUID,
 			Query:    &search,
 			RowLimit: int32(boot.Environment.PaginationWindow),
 			Page:     page,
@@ -192,6 +188,54 @@ func SearchPatients() echo.HandlerFunc {
 
 		html := helpers.MustRenderHTML(views.PatientsList(patients, csrf))
 		html = append(html, helpers.MustRenderHTML(views.PatientsPagination(int(total), page, boot.Environment.PaginationWindow, true))...)
+
+		return c.Blob(http.StatusOK, "text/html", html)
+	}
+}
+
+func PickPatient() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("picking patient", "PickPatient", c.Request().Header.Get("X-Request-ID"))
+		search := c.QueryParam("search_patients")
+
+		ctx := c.Request().Context()
+
+		repo := repository.New(database.Pool())
+
+		auser, err := auth.GetActiveSession(c.Request(), repo)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get active session: %v", err))
+		}
+		if auser == nil {
+			return c.Redirect(http.StatusSeeOther, "/auth")
+		}
+
+		auserUUID, err := uuid.Parse(auser.ID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
+		}
+
+		rawPatients, err := repo.SearchPatients(ctx, repository.SearchPatientsParams{
+			ViewerID: &auserUUID,
+			Query:    &search,
+			RowLimit: int32(boot.Environment.PaginationWindow),
+			Page:     1,
+		})
+
+		slog.Debug("picking patients", "search", search, "count", len(rawPatients))
+
+		patients := helpers.MapSlice(rawPatients, func(rawPatient *repository.Patient) ui.SearchResultsItemProps {
+			return ui.SearchResultsItemProps{
+				Name: rawPatient.FullName,
+				ID:   rawPatient.ID.String(),
+			}
+		})
+
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("unable to get users: %v", err))
+		}
+
+		html := helpers.MustRenderHTML(ui.SearchResults(patients))
 
 		return c.Blob(http.StatusOK, "text/html", html)
 	}
@@ -323,7 +367,7 @@ func UpdatePatient() echo.HandlerFunc {
 				Valid: true,
 			},
 			Sex:      &payload.Sex,
-			ViewerID: auserUUID,
+			ViewerID: &auserUUID,
 		})
 
 		if err != nil {
@@ -378,7 +422,7 @@ func DeletePatient() echo.HandlerFunc {
 
 		if err := repo.DeletePatient(ctx, repository.DeletePatientParams{
 			Mrn:      mrn,
-			ViewerID: auserUUID,
+			ViewerID: &auserUUID,
 		}); err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}

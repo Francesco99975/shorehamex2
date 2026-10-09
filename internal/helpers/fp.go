@@ -35,3 +35,38 @@ func SortSlice[T any](arr []T, less func(a, b T) bool) {
 		return less(arr[i], arr[j])
 	})
 }
+
+func Any[T any](arr []T, test func(T) bool) bool {
+	for _, item := range arr {
+		if test(item) {
+			return true
+		}
+	}
+	return false
+}
+
+func FirstWhere[T any](arr []T, test func(T) bool) (T, bool) {
+	for _, item := range arr {
+		if test(item) {
+			return item, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func Take[T any](arr []T, n int) []T {
+	if n > len(arr) {
+		n = len(arr)
+	}
+	return arr[:n]
+}
+
+func All[T any](arr []T, test func(T) bool) bool {
+	for _, item := range arr {
+		if !test(item) {
+			return false
+		}
+	}
+	return true
+}

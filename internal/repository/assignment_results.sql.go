@@ -239,16 +239,17 @@ func (q *Queries) CreateMMPIScales(ctx context.Context, scales []byte) ([]*Assig
 
 const createSumBandResult = `-- name: CreateSumBandResult :one
 INSERT INTO assignment_sum_band_results (
-    assignment_result_id, headline_score, numeric_score, scale_label,
+    assignment_result_id, subscale_code, headline_score, numeric_score, scale_label,
     severity_label, interpretation_summary
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING assignment_result_id, headline_score, numeric_score, scale_label, severity_label, interpretation_summary
+RETURNING assignment_result_id, headline_score, numeric_score, scale_label, severity_label, interpretation_summary, subscale_code
 `
 
 type CreateSumBandResultParams struct {
 	AssignmentResultID    uuid.UUID      `json:"assignment_result_id"`
+	SubscaleCode          string         `json:"subscale_code"`
 	HeadlineScore         string         `json:"headline_score"`
 	NumericScore          pgtype.Numeric `json:"numeric_score"`
 	ScaleLabel            string         `json:"scale_label"`
@@ -263,6 +264,7 @@ type CreateSumBandResultParams struct {
 func (q *Queries) CreateSumBandResult(ctx context.Context, arg CreateSumBandResultParams) (*AssignmentSumBandResult, error) {
 	row := q.db.QueryRow(ctx, createSumBandResult,
 		arg.AssignmentResultID,
+		arg.SubscaleCode,
 		arg.HeadlineScore,
 		arg.NumericScore,
 		arg.ScaleLabel,
@@ -277,6 +279,7 @@ func (q *Queries) CreateSumBandResult(ctx context.Context, arg CreateSumBandResu
 		&i.ScaleLabel,
 		&i.SeverityLabel,
 		&i.InterpretationSummary,
+		&i.SubscaleCode,
 	)
 	return &i, err
 }
@@ -370,8 +373,8 @@ func (q *Queries) GetAssignmentResultForTaking(ctx context.Context, assignmentID
 	return &i, err
 }
 
-const getSumBandResultForAssignment = `-- name: GetSumBandResultForAssignment :one
-SELECT ar.id, ar.assignment_id, ar.responses, ar.raw_scores, ar.duration_seconds, ar.scored_at, ar.created_at, ar.updated_at, sbr.headline_score, sbr.numeric_score, sbr.scale_label,
+const getSumBandResultsForAssignment = `-- name: GetSumBandResultsForAssignment :many
+SELECT ar.id, ar.assignment_id, ar.responses, ar.raw_scores, ar.duration_seconds, ar.scored_at, ar.created_at, ar.updated_at, sbr.headline_score, sbr.subscale_code, sbr.numeric_score, sbr.scale_label,
        sbr.severity_label, sbr.interpretation_summary
 FROM assignment_results ar
 JOIN assignment_sum_band_results sbr ON sbr.assignment_result_id = ar.id
@@ -381,12 +384,12 @@ WHERE ar.assignment_id = $1
   AND (a.is_developer_data OR p.is_developer_data) = is_developer_user($2)
 `
 
-type GetSumBandResultForAssignmentParams struct {
+type GetSumBandResultsForAssignmentParams struct {
 	AssignmentID uuid.UUID `json:"assignment_id"`
 	ViewerID     uuid.UUID `json:"viewer_id"`
 }
 
-type GetSumBandResultForAssignmentRow struct {
+type GetSumBandResultsForAssignmentRow struct {
 	ID                    uuid.UUID          `json:"id"`
 	AssignmentID          uuid.UUID          `json:"assignment_id"`
 	Responses             []byte             `json:"responses"`
@@ -396,6 +399,7 @@ type GetSumBandResultForAssignmentRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	HeadlineScore         string             `json:"headline_score"`
+	SubscaleCode          string             `json:"subscale_code"`
 	NumericScore          pgtype.Numeric     `json:"numeric_score"`
 	ScaleLabel            string             `json:"scale_label"`
 	SeverityLabel         string             `json:"severity_label"`
@@ -405,9 +409,56 @@ type GetSumBandResultForAssignmentRow struct {
 // The single most useful read for rendering a SUM_BANDED result screen:
 // joins straight from assignment_id to the envelope and the display
 // fields, no need to look up assignment_result_id first.
-func (q *Queries) GetSumBandResultForAssignment(ctx context.Context, arg GetSumBandResultForAssignmentParams) (*GetSumBandResultForAssignmentRow, error) {
-	row := q.db.QueryRow(ctx, getSumBandResultForAssignment, arg.AssignmentID, arg.ViewerID)
-	var i GetSumBandResultForAssignmentRow
+func (q *Queries) GetSumBandResultsForAssignment(ctx context.Context, arg GetSumBandResultsForAssignmentParams) ([]*GetSumBandResultsForAssignmentRow, error) {
+	rows, err := q.db.Query(ctx, getSumBandResultsForAssignment, arg.AssignmentID, arg.ViewerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*GetSumBandResultsForAssignmentRow
+	for rows.Next() {
+		var i GetSumBandResultsForAssignmentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssignmentID,
+			&i.Responses,
+			&i.RawScores,
+			&i.DurationSeconds,
+			&i.ScoredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HeadlineScore,
+			&i.SubscaleCode,
+			&i.NumericScore,
+			&i.ScaleLabel,
+			&i.SeverityLabel,
+			&i.InterpretationSummary,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const incrementAssignmentDuration = `-- name: IncrementAssignmentDuration :one
+UPDATE assignment_results
+SET duration_seconds = COALESCE(duration_seconds, 0) + $2
+WHERE assignment_id = $1
+RETURNING id, assignment_id, responses, raw_scores, duration_seconds, scored_at, created_at, updated_at
+`
+
+type IncrementAssignmentDurationParams struct {
+	AssignmentID    uuid.UUID `json:"assignment_id"`
+	DurationSeconds *int32    `json:"duration_seconds"`
+}
+
+func (q *Queries) IncrementAssignmentDuration(ctx context.Context, arg IncrementAssignmentDurationParams) (*AssignmentResult, error) {
+	row := q.db.QueryRow(ctx, incrementAssignmentDuration, arg.AssignmentID, arg.DurationSeconds)
+	var i AssignmentResult
 	err := row.Scan(
 		&i.ID,
 		&i.AssignmentID,
@@ -417,11 +468,6 @@ func (q *Queries) GetSumBandResultForAssignment(ctx context.Context, arg GetSumB
 		&i.ScoredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.HeadlineScore,
-		&i.NumericScore,
-		&i.ScaleLabel,
-		&i.SeverityLabel,
-		&i.InterpretationSummary,
 	)
 	return &i, err
 }
@@ -580,6 +626,35 @@ func (q *Queries) ListScaleScoreHistoryForPatient(ctx context.Context, arg ListS
 	return items, nil
 }
 
+const updateAssignmentDuration = `-- name: UpdateAssignmentDuration :one
+UPDATE assignment_results
+SET duration_seconds = $2
+WHERE assignment_id = $1
+RETURNING id, assignment_id, responses, raw_scores, duration_seconds, scored_at, created_at, updated_at
+`
+
+type UpdateAssignmentDurationParams struct {
+	AssignmentID    uuid.UUID `json:"assignment_id"`
+	DurationSeconds *int32    `json:"duration_seconds"`
+}
+
+// Updates the duration_seconds field for an assignment result.
+func (q *Queries) UpdateAssignmentDuration(ctx context.Context, arg UpdateAssignmentDurationParams) (*AssignmentResult, error) {
+	row := q.db.QueryRow(ctx, updateAssignmentDuration, arg.AssignmentID, arg.DurationSeconds)
+	var i AssignmentResult
+	err := row.Scan(
+		&i.ID,
+		&i.AssignmentID,
+		&i.Responses,
+		&i.RawScores,
+		&i.DurationSeconds,
+		&i.ScoredAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const updateAssignmentResponses = `-- name: UpdateAssignmentResponses :one
 UPDATE assignment_results
 SET responses = responses || $2::jsonb
@@ -599,6 +674,41 @@ type UpdateAssignmentResponsesParams struct {
 // No viewer_id — see header comment.
 func (q *Queries) UpdateAssignmentResponses(ctx context.Context, arg UpdateAssignmentResponsesParams) (*AssignmentResult, error) {
 	row := q.db.QueryRow(ctx, updateAssignmentResponses, arg.AssignmentID, arg.NewResponses)
+	var i AssignmentResult
+	err := row.Scan(
+		&i.ID,
+		&i.AssignmentID,
+		&i.Responses,
+		&i.RawScores,
+		&i.DurationSeconds,
+		&i.ScoredAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
+const updateAssignmentResponsesMMPI = `-- name: UpdateAssignmentResponsesMMPI :one
+UPDATE assignment_results
+SET responses = jsonb_set(
+    COALESCE(responses, '{}'::jsonb),
+    '{answers}',
+    COALESCE(responses->'answers', '[]'::jsonb)
+        || COALESCE($2::jsonb -> 'answers', '[]'::jsonb)
+)
+WHERE assignment_id = $1
+RETURNING id, assignment_id, responses, raw_scores, duration_seconds, scored_at, created_at, updated_at
+`
+
+type UpdateAssignmentResponsesMMPIParams struct {
+	AssignmentID uuid.UUID `json:"assignment_id"`
+	NewResponses []byte    `json:"new_responses"`
+}
+
+// Appends newly-answered items onto the "answers" array inside responses.
+// Fires mark_assignment_started_on_response as a side effect.
+func (q *Queries) UpdateAssignmentResponsesMMPI(ctx context.Context, arg UpdateAssignmentResponsesMMPIParams) (*AssignmentResult, error) {
+	row := q.db.QueryRow(ctx, updateAssignmentResponsesMMPI, arg.AssignmentID, arg.NewResponses)
 	var i AssignmentResult
 	err := row.Scan(
 		&i.ID,

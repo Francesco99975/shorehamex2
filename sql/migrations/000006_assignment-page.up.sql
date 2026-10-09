@@ -1,0 +1,2 @@
+ALTER TABLE assignments
+    ADD COLUMN page INTEGER NOT NULL DEFAULT 1;

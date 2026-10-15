@@ -320,6 +320,77 @@ func (q *Queries) FinalizeAssignmentResultScoring(ctx context.Context, arg Final
 	return &i, err
 }
 
+const getAssignmentDetail = `-- name: GetAssignmentDetail :one
+
+SELECT
+    a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page,
+    p.id, p.mrn, p.full_name, p.email, p.phone, p.date_of_birth, p.sex, p.created_by, p.is_developer_data, p.is_active, p.computed_status, p.last_activity_at, p.created_at, p.updated_at, p.notes,
+    ar.id               AS result_id,
+    ar.duration_seconds AS duration_seconds,
+    ar.raw_scores       AS raw_scores,
+    ar.responses        AS responses
+FROM assignments a
+JOIN patients p                 ON p.id = a.patient_id
+LEFT JOIN assignment_results ar ON ar.assignment_id = a.id
+WHERE a.id = $1
+`
+
+type GetAssignmentDetailRow struct {
+	Assignment      Assignment `json:"assignment"`
+	Patient         Patient    `json:"patient"`
+	ResultID        *uuid.UUID `json:"result_id"`
+	DurationSeconds *int32     `json:"duration_seconds"`
+	RawScores       []byte     `json:"raw_scores"`
+	Responses       []byte     `json:"responses"`
+}
+
+// ---------------------------------------------------------------------------
+// Assignment detail page
+// ---------------------------------------------------------------------------
+// Assignment header (test code, status, page, timing) + patient identity +
+// the submitted result. The result is LEFT JOINed: result_id IS NULL means
+// the patient has not submitted yet (AssignmentDetailPageProps.Result = nil).
+func (q *Queries) GetAssignmentDetail(ctx context.Context, assignmentID uuid.UUID) (*GetAssignmentDetailRow, error) {
+	row := q.db.QueryRow(ctx, getAssignmentDetail, assignmentID)
+	var i GetAssignmentDetailRow
+	err := row.Scan(
+		&i.Assignment.ID,
+		&i.Assignment.PatientID,
+		&i.Assignment.TestCode,
+		&i.Assignment.Status,
+		&i.Assignment.StartedAt,
+		&i.Assignment.CompletedAt,
+		&i.Assignment.ReviewedAt,
+		&i.Assignment.ReviewedBy,
+		&i.Assignment.IsDeveloperData,
+		&i.Assignment.CreatedAt,
+		&i.Assignment.UpdatedAt,
+		&i.Assignment.ExaminationID,
+		&i.Assignment.Sequence,
+		&i.Assignment.Page,
+		&i.Patient.ID,
+		&i.Patient.Mrn,
+		&i.Patient.FullName,
+		&i.Patient.Email,
+		&i.Patient.Phone,
+		&i.Patient.DateOfBirth,
+		&i.Patient.Sex,
+		&i.Patient.CreatedBy,
+		&i.Patient.IsDeveloperData,
+		&i.Patient.IsActive,
+		&i.Patient.ComputedStatus,
+		&i.Patient.LastActivityAt,
+		&i.Patient.CreatedAt,
+		&i.Patient.UpdatedAt,
+		&i.Patient.Notes,
+		&i.ResultID,
+		&i.DurationSeconds,
+		&i.RawScores,
+		&i.Responses,
+	)
+	return &i, err
+}
+
 const getAssignmentResult = `-- name: GetAssignmentResult :one
 SELECT ar.id, ar.assignment_id, ar.responses, ar.raw_scores, ar.duration_seconds, ar.scored_at, ar.created_at, ar.updated_at FROM assignment_results ar
 JOIN assignments a ON a.id = ar.assignment_id
@@ -369,6 +440,134 @@ func (q *Queries) GetAssignmentResultForTaking(ctx context.Context, assignmentID
 		&i.ScoredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
+const getExaminationDetail = `-- name: GetExaminationDetail :one
+SELECT
+    e.id, e.patient_id, e.mode, e.status, e.assigned_by, e.due_at, e.started_at, e.completed_at, e.reviewed_at, e.reviewed_by, e.is_developer_data, e.created_at, e.updated_at,
+    p.id, p.mrn, p.full_name, p.email, p.phone, p.date_of_birth, p.sex, p.created_by, p.is_developer_data, p.is_active, p.computed_status, p.last_activity_at, p.created_at, p.updated_at, p.notes
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = $1
+`
+
+type GetExaminationDetailRow struct {
+	Examination Examination `json:"examination"`
+	Patient     Patient     `json:"patient"`
+}
+
+// Header data: examination meta + patient identity (MRN, name, DOB, sex,
+// email, phone) in a single round-trip.
+func (q *Queries) GetExaminationDetail(ctx context.Context, examinationID uuid.UUID) (*GetExaminationDetailRow, error) {
+	row := q.db.QueryRow(ctx, getExaminationDetail, examinationID)
+	var i GetExaminationDetailRow
+	err := row.Scan(
+		&i.Examination.ID,
+		&i.Examination.PatientID,
+		&i.Examination.Mode,
+		&i.Examination.Status,
+		&i.Examination.AssignedBy,
+		&i.Examination.DueAt,
+		&i.Examination.StartedAt,
+		&i.Examination.CompletedAt,
+		&i.Examination.ReviewedAt,
+		&i.Examination.ReviewedBy,
+		&i.Examination.IsDeveloperData,
+		&i.Examination.CreatedAt,
+		&i.Examination.UpdatedAt,
+		&i.Patient.ID,
+		&i.Patient.Mrn,
+		&i.Patient.FullName,
+		&i.Patient.Email,
+		&i.Patient.Phone,
+		&i.Patient.DateOfBirth,
+		&i.Patient.Sex,
+		&i.Patient.CreatedBy,
+		&i.Patient.IsDeveloperData,
+		&i.Patient.IsActive,
+		&i.Patient.ComputedStatus,
+		&i.Patient.LastActivityAt,
+		&i.Patient.CreatedAt,
+		&i.Patient.UpdatedAt,
+		&i.Patient.Notes,
+	)
+	return &i, err
+}
+
+const getMMPIAssignment = `-- name: GetMMPIAssignment :one
+
+SELECT
+    a.id, a.patient_id, a.test_code, a.status, a.started_at, a.completed_at, a.reviewed_at, a.reviewed_by, a.is_developer_data, a.created_at, a.updated_at, a.examination_id, a.sequence, a.page,
+    p.id, p.mrn, p.full_name, p.email, p.phone, p.date_of_birth, p.sex, p.created_by, p.is_developer_data, p.is_active, p.computed_status, p.last_activity_at, p.created_at, p.updated_at, p.notes,
+    ar.id               AS result_id,
+    ar.duration_seconds AS duration_seconds,
+    ARRAY(
+        SELECT ans.value
+        FROM jsonb_array_elements_text(ar.responses -> 'answers')
+             WITH ORDINALITY AS ans(value, idx)
+        ORDER BY ans.idx
+    )::text[]           AS answers
+FROM assignments a
+JOIN patients p           ON p.id = a.patient_id
+JOIN assignment_results ar ON ar.assignment_id = a.id
+WHERE a.id = $1
+`
+
+type GetMMPIAssignmentRow struct {
+	Assignment      Assignment `json:"assignment"`
+	Patient         Patient    `json:"patient"`
+	ResultID        uuid.UUID  `json:"result_id"`
+	DurationSeconds *int32     `json:"duration_seconds"`
+	Answers         []string   `json:"answers"`
+}
+
+// ---------------------------------------------------------------------------
+// MMPI-2 results page
+// ---------------------------------------------------------------------------
+// Everything the MMPI page needs, with responses->'answers' unpacked
+// server-side into an ordered text[] so it scans straight into []string for
+// CalculateMMPI(def, answers, sex). WITH ORDINALITY guarantees item order
+// (item 1 = index 0). Only the answers array leaves the database; the rest of
+// the responses document is never transferred.
+// INNER JOIN on results: no row => not submitted yet (pgx.ErrNoRows).
+func (q *Queries) GetMMPIAssignment(ctx context.Context, assignmentID uuid.UUID) (*GetMMPIAssignmentRow, error) {
+	row := q.db.QueryRow(ctx, getMMPIAssignment, assignmentID)
+	var i GetMMPIAssignmentRow
+	err := row.Scan(
+		&i.Assignment.ID,
+		&i.Assignment.PatientID,
+		&i.Assignment.TestCode,
+		&i.Assignment.Status,
+		&i.Assignment.StartedAt,
+		&i.Assignment.CompletedAt,
+		&i.Assignment.ReviewedAt,
+		&i.Assignment.ReviewedBy,
+		&i.Assignment.IsDeveloperData,
+		&i.Assignment.CreatedAt,
+		&i.Assignment.UpdatedAt,
+		&i.Assignment.ExaminationID,
+		&i.Assignment.Sequence,
+		&i.Assignment.Page,
+		&i.Patient.ID,
+		&i.Patient.Mrn,
+		&i.Patient.FullName,
+		&i.Patient.Email,
+		&i.Patient.Phone,
+		&i.Patient.DateOfBirth,
+		&i.Patient.Sex,
+		&i.Patient.CreatedBy,
+		&i.Patient.IsDeveloperData,
+		&i.Patient.IsActive,
+		&i.Patient.ComputedStatus,
+		&i.Patient.LastActivityAt,
+		&i.Patient.CreatedAt,
+		&i.Patient.UpdatedAt,
+		&i.Patient.Notes,
+		&i.ResultID,
+		&i.DurationSeconds,
+		&i.Answers,
 	)
 	return &i, err
 }
@@ -470,6 +669,63 @@ func (q *Queries) IncrementAssignmentDuration(ctx context.Context, arg Increment
 		&i.UpdatedAt,
 	)
 	return &i, err
+}
+
+const listExaminationAssignments = `-- name: ListExaminationAssignments :many
+SELECT
+    a.id,
+    a.sequence,
+    a.page,
+    a.test_code,
+    a.status,
+    a.started_at,
+    a.completed_at,
+    a.reviewed_at
+FROM assignments a
+WHERE a.examination_id = $1
+ORDER BY a.sequence ASC
+`
+
+type ListExaminationAssignmentsRow struct {
+	ID          uuid.UUID          `json:"id"`
+	Sequence    int16              `json:"sequence"`
+	Page        int32              `json:"page"`
+	TestCode    string             `json:"test_code"`
+	Status      AssignmentStatus   `json:"status"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	ReviewedAt  pgtype.Timestamptz `json:"reviewed_at"`
+}
+
+// Assignment cards, ordered by sequence ascending. Served entirely by the
+// unique (examination_id, sequence) index, so no sort step is needed.
+func (q *Queries) ListExaminationAssignments(ctx context.Context, examinationID *uuid.UUID) ([]*ListExaminationAssignmentsRow, error) {
+	rows, err := q.db.Query(ctx, listExaminationAssignments, examinationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListExaminationAssignmentsRow
+	for rows.Next() {
+		var i ListExaminationAssignmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sequence,
+			&i.Page,
+			&i.TestCode,
+			&i.Status,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.ReviewedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMMPIIndicationsForResult = `-- name: ListMMPIIndicationsForResult :many
@@ -615,6 +871,57 @@ func (q *Queries) ListScaleScoreHistoryForPatient(ctx context.Context, arg ListS
 			&i.ScaleCode,
 			&i.ScaleName,
 			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSumBandResults = `-- name: ListSumBandResults :many
+SELECT
+    sb.subscale_code,
+    sb.headline_score,
+    sb.numeric_score,
+    sb.scale_label,
+    sb.severity_label,
+    sb.interpretation_summary
+FROM assignment_sum_band_results sb
+WHERE sb.assignment_result_id = $1
+ORDER BY (sb.subscale_code = 'OVERALL') DESC, sb.subscale_code ASC
+`
+
+type ListSumBandResultsRow struct {
+	SubscaleCode          string         `json:"subscale_code"`
+	HeadlineScore         string         `json:"headline_score"`
+	NumericScore          pgtype.Numeric `json:"numeric_score"`
+	ScaleLabel            string         `json:"scale_label"`
+	SeverityLabel         string         `json:"severity_label"`
+	InterpretationSummary string         `json:"interpretation_summary"`
+}
+
+// Scale / subscale cards for sum-based tests. OVERALL first, the rest in a
+// stable alphabetical order (the templ grid also promotes OVERALL).
+func (q *Queries) ListSumBandResults(ctx context.Context, assignmentResultID uuid.UUID) ([]*ListSumBandResultsRow, error) {
+	rows, err := q.db.Query(ctx, listSumBandResults, assignmentResultID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListSumBandResultsRow
+	for rows.Next() {
+		var i ListSumBandResultsRow
+		if err := rows.Scan(
+			&i.SubscaleCode,
+			&i.HeadlineScore,
+			&i.NumericScore,
+			&i.ScaleLabel,
+			&i.SeverityLabel,
+			&i.InterpretationSummary,
 		); err != nil {
 			return nil, err
 		}

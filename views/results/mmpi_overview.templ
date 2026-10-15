@@ -1,0 +1,111 @@
+package results
+
+import (
+	"fmt"
+	"strings"
+	"github.com/Francesco99975/shorehamex2/internal/models"
+)
+
+// MMPIOverview: header stats, basic profile chart and legend.
+templ MMPIOverview(m models.MMPIResults, bands TScoreBands) {
+	{{ scored := TScoredScales(m) }}
+	<section aria-label="MMPI-2 profile overview" class="bg-panel border border-border rounded-xl p-5 flex flex-col gap-5">
+		<div class="flex items-start justify-between gap-4 flex-wrap">
+			<div class="flex flex-col gap-1">
+				<h3 class="text-base font-semibold">MMPI-2 profile</h3>
+				<p class="text-sm text-muted text-pretty">
+					{ fmt.Sprintf("T-scores normed on %s tables · completed in %s", strings.ToLower(Humanize(m.Sex)), FormatDuration(m.Duration)) }
+				</p>
+			</div>
+			<dl class="flex gap-6">
+				@StatTile("T-scored scales", len(scored), false)
+				@StatTile(fmt.Sprintf("Elevated (T≥%d)", bands.Elevated), bands.ElevatedCount(scored), true)
+				@StatTile("Critical items", CriticalItemTotal(m), false)
+			</dl>
+		</div>
+		@MMPIProfileChart(BasicProfile(m), bands)
+		@MMPILegend(bands)
+	</section>
+}
+
+// MMPIProfileChart: classic validity + clinical bar profile with mean/cutoff lines.
+templ MMPIProfileChart(groups []ProfileGroup, bands TScoreBands) {
+	if len(groups) > 0 {
+		<figure class="flex flex-col gap-2">
+			<figcaption class="flex items-center justify-between gap-2 text-xs font-medium text-muted">
+				Basic profile
+				<span class="md:hidden font-normal">Scroll to see all scales</span>
+			</figcaption>
+			<div class="relative w-full max-w-full overflow-x-auto overscroll-x-contain pt-3">
+				<div class="relative min-w-[640px] h-48 flex items-end gap-4 border-b border-border" role="img" aria-label="Basic profile T-score chart">
+					@chartReferenceLine(bands.Mean, bands, false)
+					@chartReferenceLine(bands.Elevated, bands, true)
+					for _, g := range groups {
+						<div class="h-full flex items-end gap-1.5 flex-1">
+							for _, s := range g.Scales {
+								<div class="h-full flex-1 flex flex-col items-center justify-end gap-1 min-w-6" title={ fmt.Sprintf("%s · T%d", s.ScaleName, s.Score) }>
+									<span class={ "text-[10px] tabular-nums font-semibold", templ.KV("text-error", bands.IsElevated(s.Score)), templ.KV("text-muted", !bands.IsElevated(s.Score)) }>
+										{ fmt.Sprint(s.Score) }
+									</span>
+									<div
+										class={ "w-full max-w-5 rounded-t-sm", bands.Level(s.Score).BarClass() }
+										style={ fmt.Sprintf("height:%.2f%%", bands.Pct(s.Score)) }
+									></div>
+								</div>
+							}
+						</div>
+					}
+				</div>
+				<div class="min-w-[640px] flex gap-4 pt-1.5">
+					for _, g := range groups {
+						<div class="flex-1 flex flex-col gap-1">
+							<div class="flex gap-1.5">
+								for _, s := range g.Scales {
+									<span class="flex-1 min-w-6 text-center font-mono text-[10px] font-semibold text-muted truncate">{ s.ScaleName }</span>
+								}
+							</div>
+							<span class="text-xs text-muted border-t border-border pt-1 truncate">{ g.Title }</span>
+						</div>
+					}
+				</div>
+			</div>
+		</figure>
+	}
+}
+
+templ chartReferenceLine(t int32, bands TScoreBands, cutoff bool) {
+	<div
+		aria-hidden="true"
+		class={ "pointer-events-none absolute inset-x-0 border-t border-dashed", templ.KV("border-error/60", cutoff), templ.KV("border-border", !cutoff) }
+		style={ fmt.Sprintf("bottom:%.2f%%", bands.Pct(t)) }
+	>
+		<span class={ "absolute -top-2.5 right-0 text-[10px] bg-panel px-1", templ.KV("text-error", cutoff), templ.KV("text-muted", !cutoff) }>
+			{ fmt.Sprintf("T%d", t) }
+		</span>
+	</div>
+}
+
+templ MMPILegend(bands TScoreBands) {
+	<ul class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+		for _, e := range bands.Legend() {
+			<li class="flex items-center gap-1.5">
+				<span class={ "w-2.5 h-2.5 rounded-sm", e.Level.BarClass() } aria-hidden="true"></span>
+				{ fmt.Sprintf("%s (%s)", e.Level.Label(), e.Range) }
+			</li>
+		}
+	</ul>
+}
+
+// MMPIResultsLink: CTA card on the assignment page pointing to the dedicated MMPI page.
+templ MMPIResultsLink(href string) {
+	<a
+		href={ templ.SafeURL(href) }
+		class="bg-panel border border-primary/50 rounded-xl p-5 flex items-center justify-between gap-4 hover:shadow-md transition"
+	>
+		<div class="flex flex-col gap-1">
+			<span class="text-sm font-semibold">MMPI-2 multiscale profile</span>
+			<span class="text-sm text-muted text-pretty">Validity, clinical, content and supplementary scales with derived indications.</span>
+		</div>
+		<span class="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-fg text-sm font-medium">Open profile</span>
+	</a>
+}

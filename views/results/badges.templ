@@ -1,0 +1,71 @@
+package results
+
+import (
+	"strconv"
+
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"github.com/Francesco99975/shorehamex2/internal/repository"
+)
+
+type TagSize int
+
+const (
+	TagSM TagSize = iota
+	TagMD
+)
+
+// TestCodeTag renders an instrument code (test_definitions.code) in mono.
+templ TestCodeTag(code string, size TagSize) {
+	<span
+		class={
+			"font-mono font-semibold rounded bg-std border border-border",
+			templ.KV("text-xs px-2 py-0.5 tracking-wide", size == TagSM),
+			templ.KV("text-sm px-2.5 py-1", size == TagMD),
+		}
+	>
+		{ code }
+	</span>
+}
+
+templ AssignmentStatusBadge(status enums.AssignmentStatus) {
+	@ui.Badge(AssignmentStatusVariant(status), false) {
+		{ Humanize(status.String()) }
+	}
+}
+
+templ ExaminationStatusBadge(status repository.ExaminationStatus) {
+	@ui.Badge(ExaminationStatusVariant(status), false) {
+		{ Humanize(string(status)) }
+	}
+}
+
+// SeverityBadge for sum-band severity_label / raw_scores gravity.
+templ SeverityBadge(label string) {
+	@ui.Badge(SeverityVariant(label), false) {
+		{ Humanize(label) }
+	}
+}
+
+templ ModeBadge(mode enums.AssignmentMode) {
+	if mode == enums.AssignmentModes.REMOTE {
+		<span class="text-xs px-2 py-0.5 rounded-full border text-info border-info/40 bg-info/10">Remote</span>
+	} else {
+		<span class="text-xs px-2 py-0.5 rounded-full border text-accent border-accent/40 bg-accent/10">In-clinic</span>
+	}
+}
+
+templ OverdueBadge() {
+	<span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full bg-error/10 text-error border border-error/30 whitespace-nowrap">
+		<span class="w-1.5 h-1.5 rounded-full bg-error" aria-hidden="true"></span> Overdue
+	</span>
+}
+
+// PageBadge renders only for multi-page instruments (page > 1).
+templ PageBadge(page int) {
+	if page > 1 {
+		<span class="text-xs font-medium px-2 py-0.5 rounded-full border border-border text-muted whitespace-nowrap">
+			{ "Page " + strconv.Itoa(page) }
+		</span>
+	}
+}

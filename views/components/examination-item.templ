@@ -53,7 +53,7 @@ func (a *ExaminationItemProps) StatusClass() ui.BadgeVariant {
 func (a *ExaminationItemProps) Cta() (string, string) {
 	switch a.Status {
 	case repository.ExaminationStatusCOMPLETED:
-		return "Examine", "/examinations/" + a.ID + "/report"
+		return "Examine", "/examinations/" + a.ID
 	case repository.ExaminationStatusINPROGRESS:
 		if !a.Remote {
 			return "Resume", "/examinating/" + a.ID

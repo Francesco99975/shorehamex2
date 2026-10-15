@@ -1,0 +1,107 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/results"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+type ExaminationDetailPageProps struct {
+	ExaminationID string
+	Patient       results.PatientIdentityProps
+	Examination   results.ExaminationMetaProps // Steps derived from Assignments when empty
+	Assignments   []results.AssignmentRowProps
+	BackHref      string // default "/examinations"
+}
+
+func (p ExaminationDetailPageProps) meta() results.ExaminationMetaProps {
+	m := p.Examination
+	if len(m.Steps) == 0 {
+		m.Steps = results.StepsFromRows(p.Assignments)
+	}
+	return m
+}
+
+func (p ExaminationDetailPageProps) back() string {
+	if p.BackHref == "" {
+		return "/examinations"
+	}
+	return p.BackHref
+}
+
+templ ExaminationDetailPage(site config.Site, p ExaminationDetailPageProps) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 min-w-0 p-3 sm:p-6 max-w-[1400px] w-full mx-auto">
+			<div class="flex flex-col gap-6">
+				@results.BackLink(results.BackLinkProps{Href: p.back(), Label: "Back to examinations"})
+				@results.PatientIdentityCard(p.Patient) {
+					@deleteExaminationAction(p, site.CSRF)
+				}
+				@results.ExaminationMetaCard(p.meta())
+				@results.AssignmentList(p.Assignments)
+			</div>
+		</main>
+	}
+}
+
+// Server must answer the DELETE with `HX-Redirect: <BackHref>`.
+templ deleteExaminationAction(p ExaminationDetailPageProps, csrf string) {
+	<div x-data="{ confirmDelete: false }" class="contents">
+		@ui.Button(ui.ButtonProps{
+			Variant: ui.ButtonGhost,
+			Size:    ui.ButtonMD,
+			Type:    ui.TypeButton,
+			Attrs: templ.Attributes{
+				"@click":     "confirmDelete = true",
+				"aria-label": "Delete examination",
+				"class":      "text-muted hover:bg-error/10 hover:text-error hover:border-error/40",
+			},
+		}) {
+			@icons.Trash("w-4 h-4")
+		}
+		@ui.Modal(ui.ModalProps{
+			Title:    "Delete Examination",
+			OpenExpr: "confirmDelete",
+			MaxW:     "380px",
+		}) {
+			<div class="px-6 py-5">
+				<div class="p-4 rounded-lg bg-error/5 border border-error/20">
+					<p class="text-sm text-error font-medium mb-2">Warning: Permanent Deletion</p>
+					<p class="text-sm text-error/80">
+						{ fmt.Sprintf("The examination for %s and all %d assignment(s), including collected responses, will be permanently removed.", p.Patient.FullName, len(p.Assignments)) }
+					</p>
+				</div>
+			</div>
+			<div class="px-6 py-4 border-t border-error/20 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonMD,
+					Type:    ui.TypeButton,
+					Attrs:   templ.Attributes{"@click": "confirmDelete = false"},
+				}) {
+					<span>Cancel</span>
+				}
+				<form
+					hx-delete={ "/examinations/" + p.ExaminationID }
+					hx-swap="none"
+					{ ui.WithLoading("delete-examination-indicator")... }
+				>
+					@components.CSRF(csrf)
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonDanger,
+						Size:    ui.ButtonLG,
+						Type:    ui.TypeSubmit,
+						Loading: ui.LoadingConfig{IndicatorID: "delete-examination-indicator"},
+					}) {
+						<span>Delete Examination</span>
+					}
+				</form>
+			</div>
+		}
+	</div>
+}

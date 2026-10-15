@@ -1,0 +1,178 @@
+package results
+
+import (
+	"sort"
+	"strconv"
+	"time"
+
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+)
+
+// AssignmentRowProps maps to an `assignments` row (child of an examination).
+type AssignmentRowProps struct {
+	ID          string
+	Sequence    int
+	Page        int
+	TestCode    string
+	Status      enums.AssignmentStatus
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+	ReviewedAt  *time.Time
+	Href        string // empty => "/assignments/{ID}"
+}
+
+func (a AssignmentRowProps) URL() string {
+	if a.Href != "" {
+		return a.Href
+	}
+	return "/assignments/" + a.ID
+}
+
+// Timeline: "Completed Oct 7, 2026 · 14:36 · Reviewed …" / "Started …" / "Not started yet".
+func (a AssignmentRowProps) Timeline() string {
+	var s string
+	switch {
+	case a.CompletedAt != nil:
+		s = "Completed " + FormatDateTime(a.CompletedAt)
+	case a.StartedAt != nil:
+		s = "Started " + FormatDateTime(a.StartedAt)
+	default:
+		s = "Not started yet"
+	}
+	if a.ReviewedAt != nil {
+		s += " · Reviewed " + FormatDateTime(a.ReviewedAt)
+	}
+	return s
+}
+
+// SortBySequence returns a copy ordered by sequence ASC (stable).
+func SortBySequence(rows []AssignmentRowProps) []AssignmentRowProps {
+	out := append([]AssignmentRowProps(nil), rows...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Sequence < out[j].Sequence })
+	return out
+}
+
+func StepsFromRows(rows []AssignmentRowProps) []ProgressStep {
+	sorted := SortBySequence(rows)
+	steps := make([]ProgressStep, len(sorted))
+	for i, r := range sorted {
+		steps[i] = ProgressStep{Sequence: r.Sequence, TestCode: r.TestCode, Done: AssignmentDone(r.Status)}
+	}
+	return steps
+}
+
+templ AssignmentList(rows []AssignmentRowProps) {
+	<section aria-label="Assignments" class="flex flex-col gap-3">
+		@SectionHeading("Assignments", len(rows))
+		if len(rows) == 0 {
+			@EmptyState("This examination has no assignments.")
+		} else {
+			<ul class="flex flex-col gap-2">
+				for _, a := range SortBySequence(rows) {
+					<li>
+						@AssignmentRow(a)
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ AssignmentRow(a AssignmentRowProps) {
+	<a
+		href={ templ.SafeURL(a.URL()) }
+		class="w-full bg-panel border border-border rounded-xl p-4 flex items-center gap-4 hover:border-primary/50 hover:shadow-md transition"
+	>
+		<span class="w-8 h-8 shrink-0 rounded-full bg-std border border-border grid place-content-center text-sm font-semibold text-muted">
+			<span class="sr-only">Sequence</span>
+			{ strconv.Itoa(a.Sequence) }
+		</span>
+		<div class="min-w-0 flex-1 flex flex-col gap-1.5">
+			<div class="flex items-center gap-2 flex-wrap">
+				<span class="font-mono text-sm font-semibold">{ a.TestCode }</span>
+				@AssignmentStatusBadge(a.Status)
+				@PageBadge(a.Page)
+			</div>
+			<p class="text-xs text-muted">{ a.Timeline() }</p>
+		</div>
+		<span class="shrink-0 text-muted" aria-hidden="true">
+			@icons.ChevronRight("w-4 h-4")
+		</span>
+	</a>
+}
+
+// AssignmentHeaderProps: top of the assignment detail + MMPI pages.
+type AssignmentHeaderProps struct {
+	ID          string
+	Patient    PatientIdentityProps
+	TestCode   string
+	Status     enums.AssignmentStatus
+	Page       int
+	Timing     AssignmentTimingProps
+}
+
+templ AssignmentHeader(p AssignmentHeaderProps) {
+	<section aria-label="Assignment" class="min-w-0 bg-panel border border-border rounded-xl p-4 sm:p-5 flex flex-col gap-4">
+		<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+			@PatientSummary(p.Patient)
+			<div class="flex flex-col items-start sm:items-end gap-2">
+				<div class="flex items-center gap-2 flex-wrap sm:justify-end">
+					@TestCodeTag(p.TestCode, TagMD)
+					@AssignmentStatusBadge(p.Status)
+					@PageBadge(p.Page)
+				</div>
+				if p.Status == enums.AssignmentStatuses.READY_FOR_REVIEW {
+					//Review Button
+					<form hx-post={ "/review" + p.ID } hx-target="this" hx-swap="none">
+						<button type="submit" class="px-3 py-1.5 rounded-lg bg-primary text-primary-fg text-sm font-medium hover:opacity-90">
+							Review
+						</button>
+					</form>
+				}
+			</div>
+		</div>
+		@AssignmentTiming(p.Timing)
+	</section>
+}
+
+// AssignmentTimingProps: StartedAt/CompletedAt map assignments.started_at /
+// completed_at; DurationSeconds maps assignment_results.duration_seconds and is
+// the only source for the displayed duration (never derived from the timestamps).
+type AssignmentTimingProps struct {
+	StartedAt       *time.Time
+	CompletedAt     *time.Time
+	DurationSeconds *int
+}
+
+// DurationLabel: "1h 26m" / "6m 24s" from duration_seconds; "In progress" once
+// started without a result, Dash otherwise.
+func (t AssignmentTimingProps) DurationLabel() string {
+	if t.DurationSeconds != nil && *t.DurationSeconds >= 0 {
+		return FormatDuration(*t.DurationSeconds)
+	}
+	if t.StartedAt != nil {
+		return "In progress"
+	}
+	return Dash
+}
+
+templ AssignmentTiming(t AssignmentTimingProps) {
+	<dl class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-border">
+		@MetaField("Started", FormatDateTime(t.StartedAt), false)
+		@MetaField("Completed", FormatDateTime(t.CompletedAt), false)
+		@DurationField(t.DurationLabel())
+	</dl>
+}
+
+templ DurationField(label string) {
+	<div class="flex flex-col gap-0.5">
+		<dt class="text-xs text-muted">Duration</dt>
+		<dd class="text-sm font-semibold flex items-center gap-1.5">
+			<span class="text-primary" aria-hidden="true">
+				@icons.Clock("w-4 h-4")
+			</span>
+			{ label }
+		</dd>
+	</div>
+}

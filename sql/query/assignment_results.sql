@@ -270,3 +270,94 @@ WHERE a.patient_id = $1
   AND ms.scale_code = $2
   AND (a.is_developer_data OR p.is_developer_data) = is_developer_user(sqlc.arg(viewer_id))
 ORDER BY a.completed_at;
+
+
+
+-- name: GetExaminationDetail :one
+-- Header data: examination meta + patient identity (MRN, name, DOB, sex,
+-- email, phone) in a single round-trip.
+SELECT
+    sqlc.embed(e),
+    sqlc.embed(p)
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE e.id = sqlc.arg(examination_id);
+
+-- name: ListExaminationAssignments :many
+-- Assignment cards, ordered by sequence ascending. Served entirely by the
+-- unique (examination_id, sequence) index, so no sort step is needed.
+SELECT
+    a.id,
+    a.sequence,
+    a.page,
+    a.test_code,
+    a.status,
+    a.started_at,
+    a.completed_at,
+    a.reviewed_at
+FROM assignments a
+WHERE a.examination_id = sqlc.arg(examination_id)
+ORDER BY a.sequence ASC;
+
+
+-- ---------------------------------------------------------------------------
+-- Assignment detail page
+-- ---------------------------------------------------------------------------
+
+-- name: GetAssignmentDetail :one
+-- Assignment header (test code, status, page, timing) + patient identity +
+-- the submitted result. The result is LEFT JOINed: result_id IS NULL means
+-- the patient has not submitted yet (AssignmentDetailPageProps.Result = nil).
+SELECT
+    sqlc.embed(a),
+    sqlc.embed(p),
+    ar.id               AS result_id,
+    ar.duration_seconds AS duration_seconds,
+    ar.raw_scores       AS raw_scores,
+    ar.responses        AS responses
+FROM assignments a
+JOIN patients p                 ON p.id = a.patient_id
+LEFT JOIN assignment_results ar ON ar.assignment_id = a.id
+WHERE a.id = sqlc.arg(assignment_id);
+
+-- name: ListSumBandResults :many
+-- Scale / subscale cards for sum-based tests. OVERALL first, the rest in a
+-- stable alphabetical order (the templ grid also promotes OVERALL).
+SELECT
+    sb.subscale_code,
+    sb.headline_score,
+    sb.numeric_score,
+    sb.scale_label,
+    sb.severity_label,
+    sb.interpretation_summary
+FROM assignment_sum_band_results sb
+WHERE sb.assignment_result_id = sqlc.arg(assignment_result_id)
+ORDER BY (sb.subscale_code = 'OVERALL') DESC, sb.subscale_code ASC;
+
+
+-- ---------------------------------------------------------------------------
+-- MMPI-2 results page
+-- ---------------------------------------------------------------------------
+
+-- name: GetMMPIAssignment :one
+-- Everything the MMPI page needs, with responses->'answers' unpacked
+-- server-side into an ordered text[] so it scans straight into []string for
+-- CalculateMMPI(def, answers, sex). WITH ORDINALITY guarantees item order
+-- (item 1 = index 0). Only the answers array leaves the database; the rest of
+-- the responses document is never transferred.
+-- INNER JOIN on results: no row => not submitted yet (pgx.ErrNoRows).
+SELECT
+    sqlc.embed(a),
+    sqlc.embed(p),
+    ar.id               AS result_id,
+    ar.duration_seconds AS duration_seconds,
+    ARRAY(
+        SELECT ans.value
+        FROM jsonb_array_elements_text(ar.responses -> 'answers')
+             WITH ORDINALITY AS ans(value, idx)
+        ORDER BY ans.idx
+    )::text[]           AS answers
+FROM assignments a
+JOIN patients p           ON p.id = a.patient_id
+JOIN assignment_results ar ON ar.assignment_id = a.id
+WHERE a.id = sqlc.arg(assignment_id);

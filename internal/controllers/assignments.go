@@ -158,9 +158,25 @@ func AsqCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
+		rawScores := make(map[string]any)
+		rawScores["TOTAL"] = map[string]any{
+			"gravity":    gravity,
+			"percentage": percentage,
+			"score":      score,
+		}
+
+		rawScoresJSON, err := json.Marshal(rawScores)
+		if err != nil {
+			return herr.Handle(
+				c.Response(),
+				http.StatusInternalServerError,
+				fmt.Errorf("failed to marshal raw scores: %w", err),
+			)
+		}
+
 		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
-			RawScores:       []byte(fmt.Sprintf(`{"gravity": "%s", "percentage": "%s", "score": %d}`, gravity, percentage, score)),
+			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
 		})
 		if err != nil {
@@ -292,9 +308,25 @@ func BaiCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
+		rawScores := make(map[string]any)
+		rawScores["TOTAL"] = map[string]any{
+			"gravity":    gravity,
+			"percentage": percentage,
+			"score":      score,
+		}
+
+		rawScoresJSON, err := json.Marshal(rawScores)
+		if err != nil {
+			return herr.Handle(
+				c.Response(),
+				http.StatusInternalServerError,
+				fmt.Errorf("failed to marshal raw scores: %w", err),
+			)
+		}
+
 		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
-			RawScores:       []byte(fmt.Sprintf(`{"gravity": "%s", "percentage": "%s", "score": %d}`, gravity, percentage, score)),
+			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
 		})
 		if err != nil {
@@ -417,9 +449,25 @@ func BdiCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
+		rawScores := make(map[string]any)
+		rawScores["TOTAL"] = map[string]any{
+			"gravity":    gravity,
+			"percentage": percentage,
+			"score":      score,
+		}
+
+		rawScoresJSON, err := json.Marshal(rawScores)
+		if err != nil {
+			return herr.Handle(
+				c.Response(),
+				http.StatusInternalServerError,
+				fmt.Errorf("failed to marshal raw scores: %w", err),
+			)
+		}
+
 		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
-			RawScores:       []byte(fmt.Sprintf(`{"gravity": "%s", "percentage": "%s", "score": %d}`, gravity, percentage, score)),
+			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
 		})
 		if err != nil {
@@ -546,9 +594,25 @@ func P3Calc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
+		rawScores := make(map[string]any)
+		rawScores["TOTAL"] = map[string]any{
+			"gravity":    gravity,
+			"percentage": percentage,
+			"score":      score,
+		}
+
+		rawScoresJSON, err := json.Marshal(rawScores)
+		if err != nil {
+			return herr.Handle(
+				c.Response(),
+				http.StatusInternalServerError,
+				fmt.Errorf("failed to marshal raw scores: %w", err),
+			)
+		}
+
 		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
-			RawScores:       []byte(fmt.Sprintf(`{"gravity": "%s", "percentage": "%s", "score": %d}`, gravity, percentage, score)),
+			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
 		})
 		if err != nil {
@@ -658,10 +722,10 @@ func DASS42Calc() echo.HandlerFunc {
 			case 3:
 				responses[dass42Definition.Content.Questions[i]] = "Applied to me very much, or most of the time"
 			default:
-				responses[dass42Definition.Content.Questions[i]] = "Error response"
+				return herr.Handle(c.Response(), http.StatusBadRequest, fmt.Errorf("invalid answer: %w", err))
 			}
 
-			code := dass42Definition.GetSubscaleCodeFromItemKey(i)
+			code := dass42Definition.GetSubscaleCodeFromItemKey(i + 1)
 			if code != "" {
 				scores[code].Score += asw
 			}
@@ -846,10 +910,25 @@ func BDI2Calc() echo.HandlerFunc {
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
+		rawScores := make(map[string]any)
+		rawScores["TOTAL"] = map[string]any{
+			"gravity":    gravity,
+			"percentage": percentage,
+			"score":      score,
+		}
+
+		rawScoresJSON, err := json.Marshal(rawScores)
+		if err != nil {
+			return herr.Handle(
+				c.Response(),
+				http.StatusInternalServerError,
+				fmt.Errorf("failed to marshal raw scores: %w", err),
+			)
+		}
 
 		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
-			RawScores:       []byte(fmt.Sprintf(`{"gravity": "%s", "percentage": "%s", "score": %d}`, gravity, percentage, score)),
+			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
 		})
 		if err != nil {
@@ -934,7 +1013,7 @@ func PTSDCalc() echo.HandlerFunc {
 		var scores map[string]*models.SubResult = make(map[string]*models.SubResult, len(ptsdDefinition.Subscales))
 		for _, subscale := range ptsdDefinition.Subscales {
 			scores[subscale.Code] = &models.SubResult{
-				Score:      0,
+				Score:      0 - subscale.Adjust,
 				Gravity:    "",
 				Percentage: "",
 				Indication: "",
@@ -962,11 +1041,11 @@ func PTSDCalc() echo.HandlerFunc {
 			case 5:
 				responses[ptsdDefinition.Content.Questions[i]] = "Extremely"
 			default:
-				responses[ptsdDefinition.Content.Questions[i]] = "Error response"
+				return herr.Handle(c.Response(), http.StatusBadRequest, fmt.Errorf("invalid answer: %w", err))
 			}
 
-			code := ptsdDefinition.GetSubscaleCodeFromItemKey(i)
-			if code != "" {
+			codes := ptsdDefinition.GetSubscalesCodeFromItemKey(i + 1)
+			for _, code := range codes {
 				scores[code].Score += asw
 			}
 
@@ -989,8 +1068,12 @@ func PTSDCalc() echo.HandlerFunc {
 		for _, subscale := range ptsdDefinition.Subscales {
 			result := scores[subscale.Code]
 
+			slog.Debug("subscale result", "code", subscale.Code, "score", result.Score)
+
 			rawPercentage := float64(result.Score) / float64(subscale.MaxScore) * 100
 			result.Percentage = fmt.Sprintf("%.2f%%", rawPercentage)
+
+			slog.Debug("subscale result", "code", subscale.Code, "percentage", result.Percentage)
 
 			for _, band := range subscale.Bands {
 				if band.UpperBound == nil || result.Score <= *band.UpperBound {
@@ -1000,12 +1083,16 @@ func PTSDCalc() echo.HandlerFunc {
 			}
 			scoreName := fmt.Sprintf("%s - %s", ptsdDefinition.Name, subscale.Name)
 
+			slog.Debug("score name", "name", scoreName)
+
 			rawScores[scoreName] = map[string]any{
 				"gravity":    result.Gravity,
 				"percentage": result.Percentage,
 				"score":      result.Score,
 			}
 			indication := createBasicIndication(fmt.Sprintf("%s - %s", ptsdDefinition.Name, subscale.Name), duration, result.Percentage, result.Gravity)
+
+			slog.Debug("indication", "indication", indication)
 
 			result.Indication = indication
 
@@ -1017,7 +1104,7 @@ func PTSDCalc() echo.HandlerFunc {
 					Int:   big.NewInt(int64(result.Score)),
 					Valid: true,
 				},
-				ScaleLabel:            fmt.Sprintf("%d out of %d", result.Score, ptsdDefinition.Items),
+				ScaleLabel:            fmt.Sprintf("%d out of %d", result.Score, subscale.MaxScore),
 				SeverityLabel:         result.Gravity,
 				InterpretationSummary: result.Indication,
 			})

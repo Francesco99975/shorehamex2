@@ -176,6 +176,8 @@ Sitemap: %s/sitemap.xml
 
 	web.GET("/examinations", controllers.Examinations(), am.AuthMiddleware())
 	web.POST("/examinations", controllers.Assign(), am.AuthMiddleware())
+	web.GET("/examinations/:id", controllers.ExaminationDetail(), am.AuthMiddleware())
+	web.GET("/assignments/:id", controllers.AssignmentDetail(), am.AuthMiddleware())
 	web.DELETE("/examinations/:id", controllers.DeleteExamination(), am.AuthMiddleware())
 
 	web.GET("/examinating/:id", controllers.StartExamination())

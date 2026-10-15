@@ -263,6 +263,13 @@ type Querier interface {
 	// mode / due_at / assigned_by live on examinations, not here.
 	// page defaults to 1 (tracks the current page within a multi-page instrument).
 	GetAssignment(ctx context.Context, arg GetAssignmentParams) (*Assignment, error)
+	// ---------------------------------------------------------------------------
+	// Assignment detail page
+	// ---------------------------------------------------------------------------
+	// Assignment header (test code, status, page, timing) + patient identity +
+	// the submitted result. The result is LEFT JOINed: result_id IS NULL means
+	// the patient has not submitted yet (AssignmentDetailPageProps.Result = nil).
+	GetAssignmentDetail(ctx context.Context, assignmentID uuid.UUID) (*GetAssignmentDetailRow, error)
 	GetAssignmentInExamination(ctx context.Context, arg GetAssignmentInExaminationParams) (*Assignment, error)
 	GetAssignmentResult(ctx context.Context, arg GetAssignmentResultParams) (*AssignmentResult, error)
 	// Patient-facing: fetch current responses/progress to resume an
@@ -277,8 +284,21 @@ type Querier interface {
 	// Read – single
 	// =============================================================================
 	GetExamination(ctx context.Context, arg GetExaminationParams) (*Examination, error)
+	// Header data: examination meta + patient identity (MRN, name, DOB, sex,
+	// email, phone) in a single round-trip.
+	GetExaminationDetail(ctx context.Context, examinationID uuid.UUID) (*GetExaminationDetailRow, error)
 	GetExaminationWithPatient(ctx context.Context, arg GetExaminationWithPatientParams) (*GetExaminationWithPatientRow, error)
 	GetLastReminderSentAt(ctx context.Context, arg GetLastReminderSentAtParams) (pgtype.Timestamptz, error)
+	// ---------------------------------------------------------------------------
+	// MMPI-2 results page
+	// ---------------------------------------------------------------------------
+	// Everything the MMPI page needs, with responses->'answers' unpacked
+	// server-side into an ordered text[] so it scans straight into []string for
+	// CalculateMMPI(def, answers, sex). WITH ORDINALITY guarantees item order
+	// (item 1 = index 0). Only the answers array leaves the database; the rest of
+	// the responses document is never transferred.
+	// INNER JOIN on results: no row => not submitted yet (pgx.ErrNoRows).
+	GetMMPIAssignment(ctx context.Context, assignmentID uuid.UUID) (*GetMMPIAssignmentRow, error)
 	GetNextAssignment(ctx context.Context, arg GetNextAssignmentParams) (*Assignment, error)
 	// Resume helper: first incomplete assignment in sequence order.
 	GetNextAssignmentInExamination(ctx context.Context, arg GetNextAssignmentInExaminationParams) (*Assignment, error)
@@ -386,6 +406,9 @@ type Querier interface {
 	// One patient's timeline (patient detail view), most recent first.
 	ListActivityForPatient(ctx context.Context, arg ListActivityForPatientParams) ([]*ListActivityForPatientRow, error)
 	ListAssignmentsForExamination(ctx context.Context, arg ListAssignmentsForExaminationParams) ([]*ListAssignmentsForExaminationRow, error)
+	// Assignment cards, ordered by sequence ascending. Served entirely by the
+	// unique (examination_id, sequence) index, so no sort step is needed.
+	ListExaminationAssignments(ctx context.Context, examinationID *uuid.UUID) ([]*ListExaminationAssignmentsRow, error)
 	// Unified list for the Examinations page, dashboard "needs attention",
 	// and patient-detail examination history.
 	//
@@ -440,6 +463,9 @@ type Querier interface {
 	// for trending a single scale... over time") but that was never
 	// actually written until now.
 	ListScaleScoreHistoryForPatient(ctx context.Context, arg ListScaleScoreHistoryForPatientParams) ([]*ListScaleScoreHistoryForPatientRow, error)
+	// Scale / subscale cards for sum-based tests. OVERALL first, the rest in a
+	// stable alphabetical order (the templ grid also promotes OVERALL).
+	ListSumBandResults(ctx context.Context, assignmentResultID uuid.UUID) ([]*ListSumBandResultsRow, error)
 	ListTestDefinitions(ctx context.Context, arg ListTestDefinitionsParams) ([]*ListTestDefinitionsRow, error)
 	// activity_events.sql
 	//

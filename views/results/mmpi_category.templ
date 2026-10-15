@@ -1,0 +1,263 @@
+package results
+
+import (
+	"fmt"
+
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/internal/models"
+)
+
+// MMPIFilterScope owns the `elevatedOnly` Alpine state consumed by
+// MMPICategoryNav, MMPICategorySection and MMPIScaleGroupRow. Those components
+// MUST be rendered inside it.
+templ MMPIFilterScope() {
+	<div x-data="{ elevatedOnly: false }" class="flex flex-col gap-6">
+		{ children... }
+	</div>
+}
+
+// MMPICategoryNav: sticky chip navigator + "Elevated only" switch.
+templ MMPICategoryNav(m models.MMPIResults, bands TScoreBands) {
+	<div class="sticky top-16 z-10 -mx-1 px-1 py-2 bg-std/90 backdrop-blur flex items-center gap-3">
+		<nav class="relative flex-1 min-w-0 overflow-x-auto overscroll-x-contain" aria-label="MMPI-2 categories">
+			<ul class="flex gap-1.5 w-max">
+				for i, c := range m.Categories {
+					<li>
+						<a
+							href={ templ.SafeURL("#" + CategoryAnchor(i)) }
+							class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border border-border bg-panel text-muted hover:text-fg hover:border-primary/40 whitespace-nowrap transition"
+						>
+							<span>{ ShortTitle(c.Title) }</span>
+							if !IsRawCategory(c) && bands.ElevatedCount(c.Scales) > 0 {
+								<span class="min-w-5 px-1 rounded-full bg-error/10 text-error text-[10px] font-semibold tabular-nums text-center">
+									<span class="sr-only">Elevated:</span>
+									{ fmt.Sprint(bands.ElevatedCount(c.Scales)) }
+								</span>
+							}
+						</a>
+					</li>
+				}
+			</ul>
+		</nav>
+		@ElevatedOnlyToggle()
+	</div>
+}
+
+templ ElevatedOnlyToggle() {
+	<label class="shrink-0 inline-flex items-center gap-2 text-xs font-medium text-muted cursor-pointer select-none">
+		<input type="checkbox" x-model="elevatedOnly" class="peer sr-only"/>
+		<span
+			aria-hidden="true"
+			class="relative w-8 h-4.5 rounded-full bg-border peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 transition after:absolute after:top-0.5 after:left-0.5 after:w-3.5 after:h-3.5 after:rounded-full after:bg-panel after:transition peer-checked:after:translate-x-3.5"
+		></span>
+		<span class="hidden sm:inline">Elevated only</span>
+		<span class="sm:hidden sr-only">Elevated only</span>
+	</label>
+}
+
+// MMPINoElevatedNotice shows only while filtering and nothing crosses the cutoff.
+templ MMPINoElevatedNotice(m models.MMPIResults, bands TScoreBands) {
+	if bands.ElevatedCount(TScoredScales(m)) == 0 {
+		<div x-show="elevatedOnly" x-cloak>
+			@EmptyState(fmt.Sprintf("No scale reaches the T%d clinical cutoff.", bands.Elevated))
+		</div>
+	}
+}
+
+// MMPICategorySection: one category (index i drives the anchor id).
+templ MMPICategorySection(c models.MMPICategoryResult, i int, bands TScoreBands) {
+	{{ raw := IsRawCategory(c) }}
+	{{ groups := GroupScales(c.Scales) }}
+	{{ hasElevated := bands.AnyGroupElevated(groups) }}
+	{{ elevated := bands.ElevatedCount(c.Scales) }}
+	<section
+		id={ CategoryAnchor(i) }
+		aria-label={ c.Title }
+		class="relative min-w-0 scroll-mt-32 bg-panel border border-border rounded-xl overflow-hidden"
+		if !raw && !hasElevated {
+			x-show="!elevatedOnly"
+		}
+	>
+		<header class="p-3 sm:p-4 border-b border-border flex flex-col gap-3">
+			<div class="flex items-center justify-between gap-2 flex-wrap">
+				<h3 class="min-w-0 text-sm font-semibold text-pretty break-words">{ c.Title }</h3>
+				<div class="flex items-center gap-2 text-xs flex-wrap">
+					if raw {
+						<span class="text-muted">{ fmt.Sprintf("%d item groups", len(c.Scales)) }</span>
+						<span class="px-2 py-0.5 rounded-full bg-std border border-border text-muted">Raw item counts</span>
+					} else {
+						<span class="text-muted">{ fmt.Sprintf("%d scales", len(c.Scales)) }</span>
+						if elevated > 0 {
+							<span class="font-semibold px-2 py-0.5 rounded-full bg-error/10 text-error">{ fmt.Sprintf("%d elevated", elevated) }</span>
+						}
+					}
+				</div>
+			</div>
+			@DerivedIndications(UniqueIndications(c), 10)
+		</header>
+		if raw {
+			<ul class="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+				for _, s := range c.Scales {
+					@MMPICriticalItemTile(s)
+				}
+			</ul>
+		} else {
+			<ul class="flex flex-col">
+				for _, g := range groups {
+					@MMPIScaleGroupRow(g, bands)
+				}
+			</ul>
+		}
+	</section>
+}
+
+// DerivedIndications: chips, collapsed after `limit` items.
+templ DerivedIndications(indications []string, limit int) {
+	<div class="flex flex-col gap-1.5" x-data="{ all: false }">
+		<span class="text-xs font-medium text-muted">Derived indications</span>
+		if len(indications) == 0 {
+			<p class="text-sm text-muted">No particular indications</p>
+		} else {
+			<ul class="flex flex-wrap gap-1.5">
+				for i, ind := range indications {
+					<li
+						class="max-w-full break-words text-xs font-medium px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20"
+						if i >= limit {
+							x-show="all"
+							x-cloak
+						}
+					>
+						{ ind }
+					</li>
+				}
+				if len(indications) > limit {
+					<li>
+						<button
+							type="button"
+							@click="all = !all"
+							:aria-expanded="all.toString()"
+							class="text-xs font-medium px-2 py-1 rounded-md border border-border text-muted hover:text-fg"
+							x-text={ fmt.Sprintf("all ? 'Show less' : '+%d more'", len(indications)-limit) }
+						>
+							{ fmt.Sprintf("+%d more", len(indications)-limit) }
+						</button>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ MMPICriticalItemTile(s models.ScaleResult) {
+	<li class="min-w-0 flex items-center gap-3 p-3 rounded-lg border border-border">
+		<span class="w-12 shrink-0 font-mono text-xs font-semibold text-muted break-words">{ s.ScaleName }</span>
+		<span class="flex-1 min-w-0 text-sm text-pretty break-words">{ s.ScaleDescription }</span>
+		<span class="shrink-0 text-right">
+			<span class="block text-lg font-semibold tabular-nums leading-none">{ fmt.Sprint(s.Score) }</span>
+			<span class="block text-[10px] text-muted">
+				if s.Score == 1 {
+					item
+				} else {
+					items
+				}
+			</span>
+		</span>
+	</li>
+}
+
+// MMPIScaleGroupRow: parent scale; expandable when it has purpose text or subscales.
+templ MMPIScaleGroupRow(g ScaleGroup, bands TScoreBands) {
+	<li
+		class="border-t border-border first:border-t-0"
+		if !bands.GroupElevated(g) {
+			x-show="!elevatedOnly"
+		}
+	>
+		if g.HasDetails() {
+			<details class="group">
+				<summary class="list-none p-3 sm:p-4 flex items-center gap-3 sm:gap-4 cursor-pointer hover:bg-std/50 transition [&::-webkit-details-marker]:hidden">
+					@mmpiScaleSummary(g, bands, true)
+				</summary>
+				<div class="min-w-0 px-3 pb-3 sm:px-4 sm:pb-4 md:pl-22 flex flex-col gap-3">
+					<span class={ "md:hidden self-start text-xs font-semibold px-2 py-1 rounded-full", bands.Level(g.Scale.Score).BadgeClass() }>
+						{ bands.Level(g.Scale.Score).Label() }
+					</span>
+					if HasPurpose(g.Scale) {
+						<p class="text-sm text-muted leading-relaxed text-pretty">
+							<span class="font-medium text-fg">Purpose: </span>{ g.Scale.ScalePurpose }
+						</p>
+					}
+					if len(g.Children) > 0 {
+						<ul class="flex flex-col rounded-lg border border-border bg-std/40 divide-y divide-border">
+							for _, c := range g.Children {
+								@MMPISubscaleRow(c, bands)
+							}
+						</ul>
+					}
+				</div>
+			</details>
+		} else {
+			<div class="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
+				@mmpiScaleSummary(g, bands, false)
+			</div>
+		}
+	</li>
+}
+
+templ mmpiScaleSummary(g ScaleGroup, bands TScoreBands, expandable bool) {
+	{{ level := bands.Level(g.Scale.Score) }}
+	<span class="w-12 sm:w-14 shrink-0 font-mono text-sm font-semibold break-words">{ g.Scale.ScaleName }</span>
+	<span class="flex-1 min-w-0 flex flex-col">
+		<span class="text-sm line-clamp-2 sm:line-clamp-1 break-words" title={ g.Scale.ScaleDescription }>{ g.Scale.ScaleDescription }</span>
+		if len(g.Children) > 0 {
+			<span class="text-xs text-muted">
+				{ fmt.Sprintf("%d subscales", len(g.Children)) }
+				if bands.ElevatedCount(g.Children) > 0 {
+					{ fmt.Sprintf(" · %d elevated", bands.ElevatedCount(g.Children)) }
+				}
+			</span>
+		}
+	</span>
+	@TScoreMeter(g.Scale.Score, bands, false)
+	<span class="w-10 shrink-0 text-right text-lg font-semibold tabular-nums">{ fmt.Sprint(g.Scale.Score) }</span>
+	<span class="hidden md:inline-flex md:w-28 xl:w-36 shrink-0 justify-end">
+		<span class={ "text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap", level.BadgeClass() }>{ level.Label() }</span>
+	</span>
+	<span class={ "w-4 shrink-0 text-muted transition group-open:rotate-90", templ.KV("invisible", !expandable) } aria-hidden="true">
+		@icons.ChevronRight("w-4 h-4")
+	</span>
+}
+
+templ MMPISubscaleRow(s models.ScaleResult, bands TScoreBands) {
+	<li class="min-w-0 px-3 py-2.5 flex items-center gap-3">
+		<span class="w-12 sm:w-14 shrink-0 font-mono text-xs font-semibold text-muted break-words">{ s.ScaleName }</span>
+		<span class="flex-1 min-w-0 text-sm line-clamp-2 sm:line-clamp-1 break-words" title={ s.ScaleDescription }>{ s.ScaleDescription }</span>
+		@TScoreMeter(s.Score, bands, true)
+		<span class={ "w-8 shrink-0 text-right text-sm font-semibold tabular-nums", templ.KV("text-error", bands.IsElevated(s.Score)) }>
+			{ fmt.Sprint(s.Score) }
+		</span>
+	</li>
+}
+
+// TScoreMeter: horizontal T-score fill with a tick at the clinical cutoff. Hidden < sm.
+templ TScoreMeter(t int32, bands TScoreBands, compact bool) {
+	<div
+		role="meter"
+		aria-label="T-score"
+		aria-valuemin={ fmt.Sprint(bands.ChartMin) }
+		aria-valuemax={ fmt.Sprint(bands.ChartMax) }
+		aria-valuenow={ fmt.Sprint(t) }
+		class={
+			"hidden sm:block relative rounded-full shrink-0",
+			templ.KV("w-20 lg:w-32 h-1.5 bg-std", !compact),
+			templ.KV("w-16 lg:w-24 h-1 bg-border/60", compact),
+		}
+	>
+		<div class={ "h-full rounded-full", bands.Level(t).BarClass() } style={ fmt.Sprintf("width:%.2f%%", bands.Pct(t)) }></div>
+		<span
+			aria-hidden="true"
+			class={ "absolute -top-1 w-px bg-error/60", templ.KV("h-3.5", !compact), templ.KV("h-3", compact) }
+			style={ fmt.Sprintf("left:%.2f%%", bands.Pct(bands.Elevated)) }
+		></span>
+	</div>
+}

@@ -1,0 +1,85 @@
+package results
+
+import (
+	"fmt"
+
+	"github.com/Francesco99975/shorehamex2/views/icons"
+)
+
+type BackLinkProps struct {
+	Href  string
+	Label string
+}
+
+templ BackLink(p BackLinkProps) {
+	<a
+		href={ templ.SafeURL(p.Href) }
+		class="self-start inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-fg transition"
+	>
+		@icons.ChevronLeft("w-4 h-4")
+		<span>{ p.Label }</span>
+	</a>
+}
+
+type AvatarSize int
+
+const (
+	AvatarSM AvatarSize = iota // 32px
+	AvatarMD                   // 48px
+	AvatarLG                   // 56px
+)
+
+templ Avatar(fullName string, size AvatarSize) {
+	<div
+		aria-hidden="true"
+		class={
+			"shrink-0 rounded-full bg-accent text-accent-fg grid place-content-center font-semibold",
+			templ.KV("w-8 h-8 text-xs", size == AvatarSM),
+			templ.KV("w-12 h-12", size == AvatarMD),
+			templ.KV("w-14 h-14 text-lg", size == AvatarLG),
+		}
+	>
+		{ Initials(fullName) }
+	</div>
+}
+
+// Panel is the shared bordered card surface used by every section.
+templ Panel(label string, padded bool) {
+	<section
+		aria-label={ label }
+		class={ "bg-panel border border-border rounded-xl", templ.KV("p-5 flex flex-col gap-4", padded) }
+	>
+		{ children... }
+	</section>
+}
+
+// SectionHeading: "Assignments (3)". count < 0 hides the counter.
+templ SectionHeading(title string, count int) {
+	<h3 class="text-sm font-semibold">
+		{ title }
+		if count >= 0 {
+			<span class="text-muted font-normal">{ fmt.Sprintf("(%d)", count) }</span>
+		}
+	</h3>
+}
+
+templ MetaField(label, value string, danger bool) {
+	<div class="flex flex-col gap-0.5">
+		<dt class="text-xs text-muted">{ label }</dt>
+		<dd class={ "text-sm font-medium", templ.KV("text-error", danger) }>{ value }</dd>
+	</div>
+}
+
+templ EmptyState(message string) {
+	<p class="p-8 text-center text-sm text-muted border border-dashed border-border rounded-xl text-pretty">
+		{ message }
+	</p>
+}
+
+// StatTile: label over a large tabular number.
+templ StatTile(label string, value int, danger bool) {
+	<div class="flex flex-col">
+		<dt class="text-xs text-muted">{ label }</dt>
+		<dd class={ "text-2xl font-semibold tabular-nums", templ.KV("text-error", danger) }>{ fmt.Sprint(value) }</dd>
+	</div>
+}

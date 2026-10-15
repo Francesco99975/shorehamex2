@@ -1,0 +1,45 @@
+package views
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/results"
+	"github.com/Francesco99975/shorehamex2/internal/models"
+)
+
+type AssignmentDetailPageProps struct {
+	Header          results.AssignmentHeaderProps
+	Result          *results.AssignmentResult // nil => not submitted yet
+	MMPIResults  	*models.MMPIResults
+	Bands    		results.TScoreBands // zero value => results.DefaultTScoreBands()
+	BackHref        string                    // "/examinations/{examination_id}"
+}
+
+templ AssignmentDetailPage(site config.Site, p AssignmentDetailPageProps) {
+	@layouts.AuthenticatedLayout(site) {
+		<main class="flex-1 min-w-0 p-3 sm:p-6 max-w-[1400px] w-full mx-auto">
+			<div class="flex flex-col gap-6">
+				@results.BackLink(results.BackLinkProps{Href: p.BackHref, Label: "Back to examination"})
+				@results.AssignmentHeader(p.Header)
+				if (p.Result == nil || p.Result.Empty()) && p.MMPIResults == nil {
+					@results.EmptyState("No results yet. They will appear here once the patient submits this assignment.")
+				} else {
+					if p.MMPIResults == nil {
+						@results.SumBandGrid(p.Result.SumBands)
+						@results.RawResultsSection(p.Result.RawScores, p.Result.Responses)
+					} else {
+						{{ bands := p.Bands.OrDefault() }}
+						@results.MMPIOverview(*p.MMPIResults, bands)
+						@results.MMPIFilterScope() {
+							@results.MMPICategoryNav(*p.MMPIResults, bands)
+							@results.MMPINoElevatedNotice(*p.MMPIResults, bands)
+							for i, c := range p.MMPIResults.Categories {
+								@results.MMPICategorySection(c, i, bands)
+							}
+						}
+					}
+				}
+			</div>
+		</main>
+	}
+}

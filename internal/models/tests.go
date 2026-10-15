@@ -183,13 +183,6 @@ type Subscale struct {
 	ItemKeys []int       `json:"itemKeys"`
 }
 
-type ScaleResult struct {
-	ScaleName        string
-	ScaleDescription string
-	ScalePurpose     string
-	Score            int32
-}
-
 type Dass42Definition struct {
 	TestDefinition
 	Subscales []Subscale    `json:"subscales"`
@@ -255,15 +248,16 @@ type PTSDDefinition struct {
 	Content   PTSDContent `json:"content"`
 }
 
-func (def *PTSDDefinition) GetSubscaleCodeFromItemKey(itemKey int) string {
+func (def *PTSDDefinition) GetSubscalesCodeFromItemKey(itemKey int) []string {
+	var codes []string
 	for _, subscale := range def.Subscales {
 		for _, key := range subscale.ItemKeys {
 			if key == itemKey {
-				return subscale.Code
+				codes = append(codes, subscale.Code)
 			}
 		}
 	}
-	return ""
+	return codes
 }
 
 func LoadPTSDDefinition(path string) (*PTSDDefinition, error) {
@@ -272,6 +266,13 @@ func LoadPTSDDefinition(path string) (*PTSDDefinition, error) {
 		return nil, fmt.Errorf("load PTSD definition: %w", err)
 	}
 	return &def, nil
+}
+
+type ScaleResult struct {
+	ScaleName        string
+	ScaleDescription string
+	ScalePurpose     string
+	Score            int32
 }
 
 type MMPICategoryResult struct {

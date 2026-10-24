@@ -47,7 +47,7 @@ func createBasicIndication(testName string, duration int, percentage string, gra
 func ExaminationSuccess() echo.HandlerFunc {
 	return func(c echo.Context) error {
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)
 
@@ -1302,7 +1302,7 @@ func MMPICalc() echo.HandlerFunc {
 
 		paginatedQuestions := mmpi2Definition.Content.Questions[startIndex:endIndex]
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)

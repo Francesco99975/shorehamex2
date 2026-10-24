@@ -1,0 +1,34 @@
+package dashboard
+
+// PanelHeader is the title/subtitle row shared by dashboard sections.
+// children render on the right (counter pill, rate, link…).
+templ PanelHeader(id, title, subtitle string, bordered bool) {
+	<div
+		class={
+			"flex items-start sm:items-center justify-between gap-3",
+			templ.KV("p-4 border-b border-border", bordered),
+		}
+	>
+		<div class="flex flex-col min-w-0">
+			<h2 id={ id } class="font-semibold text-balance">{ title }</h2>
+			if subtitle != "" {
+				<p class="text-sm text-muted text-pretty">{ subtitle }</p>
+			}
+		</div>
+		<div class="shrink-0">
+			{ children... }
+		</div>
+	</div>
+}
+
+templ CountPill(label string, danger bool) {
+	<span
+		class={
+			"inline-block text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap",
+			templ.KV("bg-error/10 text-error", danger),
+			templ.KV("bg-std text-muted", !danger),
+		}
+	>
+		{ label }
+	</span>
+}

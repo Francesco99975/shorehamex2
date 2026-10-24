@@ -7,6 +7,9 @@ import (
 
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"fmt"
 )
 
 // AssignmentRowProps maps to an `assignments` row (child of an examination).
@@ -112,8 +115,8 @@ type AssignmentHeaderProps struct {
 	Timing     AssignmentTimingProps
 }
 
-templ AssignmentHeader(p AssignmentHeaderProps) {
-	<section aria-label="Assignment" class="min-w-0 bg-panel border border-border rounded-xl p-4 sm:p-5 flex flex-col gap-4">
+templ AssignmentHeader(p AssignmentHeaderProps, csrf string) {
+	<section id="assignment-header" aria-label="Assignment" class="min-w-0 bg-panel border border-border rounded-xl p-4 sm:p-5 flex flex-col gap-4">
 		<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
 			@PatientSummary(p.Patient)
 			<div class="flex flex-col items-start sm:items-end gap-2">
@@ -123,17 +126,77 @@ templ AssignmentHeader(p AssignmentHeaderProps) {
 					@PageBadge(p.Page)
 				</div>
 				if p.Status == enums.AssignmentStatuses.READY_FOR_REVIEW {
-					//Review Button
-					<form hx-post={ "/review" + p.ID } hx-target="this" hx-swap="none">
-						<button type="submit" class="px-3 py-1.5 rounded-lg bg-primary text-primary-fg text-sm font-medium hover:opacity-90">
-							Review
-						</button>
-					</form>
+					@reviewAssignmentAction(p, csrf)
+				}
+				if p.Status == enums.AssignmentStatuses.COMPLETED {
+					@downloadAction(p)
 				}
 			</div>
 		</div>
 		@AssignmentTiming(p.Timing)
 	</section>
+}
+
+templ reviewAssignmentAction(p AssignmentHeaderProps, csrf string) {
+	<div x-data="{ confirmReview: false }" class="contents">
+		@ui.Button(ui.ButtonProps{
+			Variant: ui.ButtonGhostSuccess,
+			Size:    ui.ButtonMD,
+			Type:    ui.TypeButton,
+			Attrs: templ.Attributes{
+				"@click":     "confirmReview = true",
+				"aria-label": "Review assignment",
+			},
+		}) {
+			Review Assignment
+		}
+		@ui.Modal(ui.ModalProps{
+			Title:    "Review Assignment",
+			OpenExpr: "confirmReview",
+			MaxW:     "380px",
+		}) {
+			<div class="px-6 py-5">
+				<div class="p-4 rounded-lg bg-info/5 border border-info/20">
+					<p class="text-sm text-success font-medium mb-2">Reviewing Assignment</p>
+					<p class="text-sm text-info/80">
+						{ fmt.Sprintf("This action will mark this %s assignment as reviewed for %s.", p.TestCode, p.Patient.FullName) }
+					</p>
+				</div>
+			</div>
+			<div class="px-6 py-4 border-t border-info/20 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end rounded-b-2xl">
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonMD,
+					Type:    ui.TypeButton,
+					Attrs:   templ.Attributes{"@click": "confirmReview = false"},
+				}) {
+					<span>Cancel</span>
+				}
+				<form
+					hx-patch={ "/assignments/" + p.ID  }
+					hx-target="#assignment-header"
+					hx-swap="outerHTML"
+					{ ui.WithLoading("review-assignment-indicator")... }
+				>
+					@components.CSRF(csrf)
+					@ui.Button(ui.ButtonProps{
+						Variant: ui.ButtonSuccess,
+						Size:    ui.ButtonLG,
+						Type:    ui.TypeSubmit,
+						Loading: ui.LoadingConfig{IndicatorID: "review-assignment-indicator"},
+					}) {
+						<span>Review Assignment</span>
+					}
+				</form>
+			</div>
+		}
+	</div>
+}
+
+templ downloadAction(p AssignmentHeaderProps) {
+	<a href={ templ.SafeURL(fmt.Sprintf("/results/%s", p.ID)) } download class="bg-red-500 text-white font-bold py-2 px-4 rounded hover:bg-red-600 text-center block p-2 my-3">
+		Download PDF
+	</a>
 }
 
 // AssignmentTimingProps: StartedAt/CompletedAt map assignments.started_at /

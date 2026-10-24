@@ -25,7 +25,7 @@ import (
 
 func ResetPage() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)
@@ -39,7 +39,7 @@ func ResetPage() echo.HandlerFunc {
 func ResetPageExpress() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		token := c.Param("token")
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)

@@ -1,0 +1,63 @@
+package dashboard
+
+import "fmt"
+
+type DailyCompletion struct {
+	Label     string // "Mon"
+	Completed int    // assignments completed that day
+	Assigned  int    // assignments due/assigned that day
+}
+
+func (d DailyCompletion) Pct() float64 { return Percent(d.Completed, d.Assigned) }
+
+type WeeklyCompletionProps struct {
+	Title string // default "Completion this week"
+	Days  []DailyCompletion
+}
+
+func (p WeeklyCompletionProps) title() string {
+	if p.Title == "" {
+		return "Completion this week"
+	}
+	return p.Title
+}
+
+// Rate is the weekly completion rate (sum completed / sum assigned).
+func (p WeeklyCompletionProps) Rate() float64 {
+	var c, a int
+	for _, d := range p.Days {
+		c += d.Completed
+		a += d.Assigned
+	}
+	return Percent(c, a)
+}
+
+templ WeeklyCompletion(p WeeklyCompletionProps) {
+	<section aria-labelledby="weekly-heading" class="bg-panel border border-border rounded-xl p-4 flex flex-col gap-3 min-w-0">
+		@PanelHeader("weekly-heading", p.title(), "", false) {
+			<span class="text-sm font-medium text-success tabular-nums">{ fmt.Sprintf("%.0f%%", p.Rate()) }</span>
+		}
+		<ul class="flex flex-col gap-3">
+			for _, d := range p.Days {
+				@CompletionBar(d)
+			}
+		</ul>
+	</section>
+}
+
+templ CompletionBar(d DailyCompletion) {
+	<li class="flex items-center gap-3">
+		<span class="text-xs text-muted w-8 shrink-0">{ d.Label }</span>
+		<div
+			class="flex-1 h-2 rounded-full bg-std overflow-hidden"
+			role="progressbar"
+			aria-valuemin="0"
+			aria-valuemax="100"
+			aria-valuenow={ fmt.Sprintf("%.0f", d.Pct()) }
+			aria-label={ fmt.Sprintf("%s: %d of %d completed", d.Label, d.Completed, d.Assigned) }
+		>
+			<div class="h-full rounded-full bg-primary" style={ widthStyle(d.Pct()) }></div>
+		</div>
+		<span class="text-xs text-muted w-6 shrink-0 text-right tabular-nums">{ fmt.Sprint(d.Completed) }</span>
+	</li>
+}

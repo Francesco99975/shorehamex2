@@ -32,13 +32,23 @@ type PageMeta struct {
 
 var pageMeta = map[string]PageMeta{
 	"/": {
-		Title:       "ShorehamEX",
+		Title:       "Casa Medica Examinations",
 		Description: "Clinical assessment console",
 		Indexable:   false,
 	},
 	"/auth": {
-		Title:       "ShorehamEX Auth",
+		Title:       "Casa Medica Examinations",
 		Description: "Clinical assessment console - Authentication",
+		Indexable:   false,
+	},
+	"/auth/2fa/reset": {
+		Title:       "2FA Reset",
+		Description: "Clinical assessment console - 2FA Reset",
+		Indexable:   false,
+	},
+	"/auth/2fa/restore": {
+		Title:       "2FA Restore",
+		Description: "Clinical assessment console - 2FA Restore",
 		Indexable:   false,
 	},
 	"/dashboard": {
@@ -54,6 +64,21 @@ var pageMeta = map[string]PageMeta{
 	"/examinations": {
 		Title:       "Examinations",
 		Description: "Clinical assessment console - Examinations",
+		Indexable:   false,
+	},
+	"/examinations/:id": {
+		Title:       "Examination Details",
+		Description: "Clinical assessment console - Examination Details",
+		Indexable:   false,
+	},
+	"/assignments/:id": {
+		Title:       "Assignment Details",
+		Description: "Clinical assessment console - Assignment Details",
+		Indexable:   false,
+	},
+	"/success": {
+		Title:       "Successfully Completed",
+		Description: "Clinical assessment console - Successfully Completed",
 		Indexable:   false,
 	},
 	"/tests": {
@@ -162,9 +187,9 @@ func generateSitemap() []byte {
 
 	return append([]byte(xml.Header), output...)
 }
-func GetDefaultSite(r *http.Request) Site {
+func GetDefaultSite(r *http.Request, routePath string) Site {
 
-	meta, ok := pageMeta[r.URL.Path]
+	meta, ok := pageMeta[routePath]
 	if !ok {
 		meta = PageMeta{
 			Title:       "Error",

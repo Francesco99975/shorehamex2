@@ -1,0 +1,118 @@
+package dashboard
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/enums"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/results"
+)
+
+type AttentionActionKind int
+
+const (
+	ActionReview AttentionActionKind = iota // GET link to the assignment detail page
+	ActionResend                            // POST: regenerate + resend the remote link
+	ActionRemind                            // POST: send a reminder for the existing link
+	ActionResume                            // POST: resume the assignment
+)
+
+func (k AttentionActionKind) Label() string {
+	switch k {
+	case ActionResend:
+		return "Resend"
+	case ActionRemind:
+		return "Remind"
+	case ActionResume:
+		return "Resume"
+	default:
+		return "Review"
+	}
+}
+
+type AttentionAction struct {
+	Kind AttentionActionKind
+	Href string // Review: page URL. Resend/Remind: hx-post endpoint.
+}
+
+type AttentionItemProps struct {
+	ID          string // assignment id
+	PatientName string
+	TestCode    string
+	Status      enums.AssignmentStatus
+	Overdue     bool
+	Note        string // "Completed remotely · 2h ago"
+	Action      AttentionAction
+}
+
+type AttentionPanelProps struct {
+	Items []AttentionItemProps
+	Csrf  string // required for Resend/Remind actions
+}
+
+templ AttentionPanel(p AttentionPanelProps) {
+	<section aria-labelledby="attention-heading" class="bg-panel border border-border rounded-xl min-w-0">
+		@PanelHeader("attention-heading", "Needs your attention", "Completed results to review & overdue remote tests.", true) {
+			@CountPill(pluralItems(len(p.Items)), len(p.Items) > 0)
+		}
+		if len(p.Items) == 0 {
+			<p class="p-8 text-center text-sm text-muted text-pretty">{ "You're all caught up. Nothing needs review right now." }</p>
+		} else {
+			<ul class="divide-y divide-[color:var(--color-border)]">
+				for _, it := range p.Items {
+					@AttentionRow(it, p.Csrf)
+				}
+			</ul>
+		}
+	</section>
+}
+
+// AttentionRow uses one DOM tree for every breakpoint; flex `order` moves the
+// badges below the identity on mobile and between identity/action on sm+.
+templ AttentionRow(it AttentionItemProps, csrf string) {
+	<li id={ results.DomID("attention", it.ID) } class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 p-4 hover:bg-std/60 transition">
+		<div class="flex items-start gap-3 min-w-0 flex-1">
+			@results.Avatar(it.PatientName, results.AvatarSM)
+			<div class="flex flex-col min-w-0">
+				<p class="text-sm font-medium truncate">
+					{ it.PatientName }
+					<span class="text-muted font-normal">{ "· " + it.TestCode }</span>
+				</p>
+				if it.Note != "" {
+					<p class="text-xs text-muted text-pretty">{ it.Note }</p>
+				}
+			</div>
+		</div>
+		<div class="order-last sm:order-none w-full sm:w-auto pl-11 sm:pl-0 flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+			@results.AssignmentStatusBadge(it.Status)
+			if it.Overdue {
+				@results.OverdueBadge()
+			}
+		</div>
+		<div class="shrink-0">
+			@AttentionActionButton(it, csrf)
+		</div>
+	</li>
+}
+
+templ AttentionActionButton(it AttentionItemProps, csrf string) {
+	if it.Action.Kind == ActionReview || it.Action.Kind == ActionResume {
+		<a
+			href={ templ.SafeURL(it.Action.Href) }
+			class="text-sm font-medium text-primary hover:underline whitespace-nowrap"
+			aria-label={ "Review " + it.TestCode + " for " + it.PatientName }
+		>
+			{ it.Action.Kind.Label() }
+		</a>
+	} else {
+		<form hx-post={ it.Action.Href } hx-swap="none" class="contents">
+			@components.CSRF(csrf)
+			<button
+				type="submit"
+				class="text-sm font-medium text-primary hover:underline whitespace-nowrap disabled:opacity-50"
+				hx-disabled-elt="this"
+				aria-label={ it.Action.Kind.Label() + " " + it.TestCode + " link to " + it.PatientName }
+			>
+				{ it.Action.Kind.Label() }
+			</button>
+		</form>
+	}
+}

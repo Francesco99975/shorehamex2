@@ -459,7 +459,7 @@ func SessionLoginTwoFACheck() echo.HandlerFunc {
 
 func TwoFAResetForm() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)
@@ -530,7 +530,7 @@ func TwoFAReset() echo.HandlerFunc {
 		}
 
 		key, err := totp.Generate(totp.GenerateOpts{
-			Issuer:      config.GetDefaultSite(c.Request()).AppName,
+			Issuer:      config.GetDefaultSite(c.Request(), c.Path()).AppName,
 			AccountName: user.Email,
 		})
 		if err != nil {
@@ -662,7 +662,7 @@ func TwoFAVerifyReset() echo.HandlerFunc {
 func TwoFARestoreForm() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		herr := httperr.New("two factor restore form", "TwoFARestoreForm", c.Request().Header.Get("X-Request-ID"))
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)

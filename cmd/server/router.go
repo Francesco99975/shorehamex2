@@ -100,7 +100,7 @@ func createRouter() *echo.Echo {
 	})
 
 	e.GET("/sitemap.xml", func(c echo.Context) error {
-		sitemap := config.GetDefaultSite(c.Request()).Sitemap
+		sitemap := config.GetDefaultSite(c.Request(), c.Path()).Sitemap
 
 		if sitemap == nil {
 			slog.Warn("Sitemap not configured")
@@ -179,6 +179,8 @@ Sitemap: %s/sitemap.xml
 	web.GET("/examinations/:id", controllers.ExaminationDetail(), am.AuthMiddleware())
 	web.GET("/assignments/:id", controllers.AssignmentDetail(), am.AuthMiddleware())
 	web.DELETE("/examinations/:id", controllers.DeleteExamination(), am.AuthMiddleware())
+	web.PATCH("/assignments/:id", controllers.ReviewAssignment(), am.AuthMiddleware())
+	web.GET("/results/:id", controllers.DownloadResults(), am.AuthMiddleware())
 
 	web.GET("/examinating/:id", controllers.StartExamination())
 	web.GET("/success", controllers.ExaminationSuccess())
@@ -255,7 +257,7 @@ func serverErrorHandler(err error, c echo.Context) {
 		})
 	} else {
 		// Prepare data for rendering the error page (HTML)
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.Nonce = c.Get("nonce").(string)
 
 		var title string

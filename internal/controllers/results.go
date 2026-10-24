@@ -3,6 +3,7 @@ package controllers
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Francesco99975/shorehamex2/internal/auth"
@@ -13,9 +14,11 @@ import (
 	"github.com/Francesco99975/shorehamex2/internal/httperr"
 	"github.com/Francesco99975/shorehamex2/internal/models"
 	"github.com/Francesco99975/shorehamex2/internal/repository"
+	"github.com/Francesco99975/shorehamex2/internal/tools"
 	"github.com/Francesco99975/shorehamex2/views"
 	"github.com/Francesco99975/shorehamex2/views/results"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -42,7 +45,7 @@ func ExaminationDetail() echo.HandlerFunc {
 			return c.Redirect(http.StatusSeeOther, "/auth")
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.CurrentUser = user
 
 		data.Nonce = c.Get("nonce").(string)
@@ -147,7 +150,7 @@ func AssignmentDetail() echo.HandlerFunc {
 			return c.Redirect(http.StatusSeeOther, "/auth")
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.CurrentUser = user
 
 		data.Nonce = c.Get("nonce").(string)
@@ -197,7 +200,7 @@ func AssignmentDetail() echo.HandlerFunc {
 			MMPIResults: nil,
 			BackHref:    "/examinations/" + assignmentDetails.Assignment.ExaminationID.String(),
 		}
-		if assignmentDetails.Assignment.TestCode != "MMPI-2" {
+		if assignmentDetails.Assignment.TestCode != enums.TestCodes.MMPI2.String() {
 
 			rawScores, err := results.DecodeRawScores(assignmentDetails.RawScores)
 			if err != nil {
@@ -268,6 +271,185 @@ func AssignmentDetail() echo.HandlerFunc {
 		html := helpers.MustRenderHTML(views.AssignmentDetailPage(data, props))
 
 		return c.Blob(http.StatusOK, "text/html", html)
+
+	}
+}
+
+func ReviewAssignment() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("review assignment", "ReviewAssignment", c.Request().Header.Get("X-Request-ID"))
+		assignmentID := c.Param("id")
+
+		slog.Debug("review assignment", "assignmentID", assignmentID)
+
+		assignmentUUID, err := uuid.Parse(assignmentID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		ctx := c.Request().Context()
+		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+		defer database.HandleTransaction(ctx, tx, &err)
+
+		repo := repository.New(tx)
+
+		user, err := auth.GetActiveSession(c.Request(), repo)
+		if err != nil && user != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+		if user == nil {
+			return c.Redirect(http.StatusSeeOther, "/auth")
+		}
+
+		userUUID, err := uuid.Parse(user.ID)
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
+		assignment, err := repo.CompleteAssignmentReview(ctx, repository.CompleteAssignmentReviewParams{
+			ID:         assignmentUUID,
+			ReviewerID: &userUUID,
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		assignmentDetails, err := repo.GetAssignmentDetail(c.Request().Context(), assignment.ID)
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
+		slog.Debug("Fetched assignment details", slog.String("assignmentID", assignmentDetails.Assignment.ID.String()))
+
+		patientIdentityProps := results.PatientIdentityProps{
+			ID:          assignmentDetails.Patient.ID.String(),
+			MRN:         assignmentDetails.Patient.Mrn,
+			FullName:    assignmentDetails.Patient.FullName,
+			Email:       *assignmentDetails.Patient.Email,
+			Phone:       *assignmentDetails.Patient.Phone,
+			DateOfBirth: assignmentDetails.Patient.DateOfBirth.Time,
+			Sex:         enums.GetSexFromString(string(*assignmentDetails.Patient.Sex)),
+			Now:         time.Now(),
+		}
+
+		headerProps := results.AssignmentHeaderProps{
+			ID:       assignmentDetails.Assignment.ID.String(),
+			Patient:  patientIdentityProps,
+			TestCode: assignmentDetails.Assignment.TestCode,
+			Status:   enums.GetAssignmentStatusFromString(string(assignmentDetails.Assignment.Status)),
+			Page:     int(assignmentDetails.Assignment.Page),
+			Timing: results.AssignmentTimingProps{
+				StartedAt:       &assignmentDetails.Assignment.StartedAt.Time,
+				CompletedAt:     &assignmentDetails.Assignment.CompletedAt.Time,
+				DurationSeconds: new(int(*assignmentDetails.DurationSeconds)),
+			},
+		}
+
+		csrf := c.Get("csrf").(string)
+
+		html := helpers.MustRenderHTML(results.AssignmentHeader(headerProps, csrf))
+
+		return c.Blob(http.StatusOK, "text/html", html)
+	}
+}
+
+func DownloadResults() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("downloading results", "DownloadResults", c.Request().Header.Get("X-Request-ID"))
+		id := c.Param("id")
+
+		slog.Debug("downloading results", "id", id)
+
+		assignmentUUID, err := uuid.Parse(id)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		ctx := c.Request().Context()
+		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+		defer database.HandleTransaction(ctx, tx, &err)
+
+		repo := repository.New(tx)
+
+		assignmentDetails, err := repo.GetAssignmentDetail(c.Request().Context(), assignmentUUID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		testDefinition, err := repo.GetTestDefinition(c.Request().Context(), assignmentDetails.Assignment.TestCode)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		if assignmentDetails.Assignment.TestCode == enums.TestCodes.MMPI2.String() {
+			rawMmpiResults, err := repo.GetMMPIAssignment(c.Request().Context(), assignmentDetails.Assignment.ID)
+			if err != nil {
+				return herr.HandleEchoPage(http.StatusInternalServerError, err)
+			}
+
+			mmpi2Definition, err := models.LoadMMPIDefinition(testDefinition.SourcePath)
+			if err != nil {
+				return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+			}
+
+			mmpiResults, err := models.CalculateMMPI(mmpi2Definition, rawMmpiResults.Answers, enums.GetSexFromString(string(*assignmentDetails.Patient.Sex)))
+			if err != nil {
+				return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+			}
+
+			mmpiResults.Sex = string(*assignmentDetails.Patient.Sex)
+			mmpiResults.Duration = int(*assignmentDetails.DurationSeconds)
+
+			file, err := tools.GeneratePDFMMPI(mmpiResults)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			}
+			defer os.Remove(file)
+
+			return c.Attachment(file, file)
+		} else {
+			assignmentSumBandResults, err := repo.ListSumBandResults(c.Request().Context(), *assignmentDetails.ResultID)
+			if err != nil {
+				return herr.HandleEchoPage(http.StatusInternalServerError, err)
+			}
+
+			sumBands := make([]results.SumBand, 0, len(assignmentSumBandResults))
+			for _, band := range assignmentSumBandResults {
+				numeric, err := band.NumericScore.Int64Value()
+				if err != nil {
+					return err
+				}
+
+				value := int(numeric.Int64)
+				sumBands = append(sumBands, results.SumBand{
+					SubscaleCode:          band.SubscaleCode,
+					HeadlineScore:         band.HeadlineScore,
+					NumericScore:          value,
+					ScaleLabel:            band.ScaleLabel,
+					SeverityLabel:         band.SeverityLabel,
+					InterpretationSummary: band.InterpretationSummary,
+				})
+			}
+
+			file, err := tools.GeneratePDFGeneric(testDefinition, tools.PatientDetails{
+				MRN:  assignmentDetails.Patient.Mrn,
+				Name: assignmentDetails.Patient.FullName,
+				Sex:  string(*assignmentDetails.Patient.Sex),
+			}, sumBands, int(*assignmentDetails.DurationSeconds))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+			}
+			defer os.Remove(file)
+
+			return c.Attachment(file, file)
+
+		}
 
 	}
 }

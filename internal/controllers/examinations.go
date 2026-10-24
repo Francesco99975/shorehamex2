@@ -70,7 +70,7 @@ func Examinations() echo.HandlerFunc {
 			return c.Redirect(http.StatusSeeOther, "/auth")
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.CurrentUser = user
 
 		data.Nonce = c.Get("nonce").(string)
@@ -465,7 +465,7 @@ func StartExamination() echo.HandlerFunc {
 			return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("list test definitions: %w", err))
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)

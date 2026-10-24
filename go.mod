@@ -18,9 +18,20 @@ require (
 )
 
 require (
-	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+	github.com/boombuler/barcode v1.1.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/hhrutter/lzw v1.0.0 // indirect
+	github.com/hhrutter/pkcs7 v0.2.0 // indirect
+	github.com/hhrutter/tiff v1.0.2 // indirect
+	github.com/johnfercher/go-tree v1.1.0 // indirect
+	github.com/mattn/go-runewidth v0.0.21 // indirect
+	github.com/pdfcpu/pdfcpu v0.11.1 // indirect
+	github.com/phpdave11/gofpdf v1.4.3 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sixafter/aes-ctr-drbg v1.19.3 // indirect
 	github.com/sixafter/prng-chacha v1.16.6 // indirect
+	golang.org/x/image v0.41.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 require (
@@ -31,6 +42,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/johnfercher/maroto/v2 v2.4.3
 	github.com/labstack/gommon v0.5.0
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect

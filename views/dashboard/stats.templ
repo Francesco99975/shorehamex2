@@ -1,0 +1,63 @@
+package dashboard
+
+type TrendTone int
+
+const (
+	TrendNeutral TrendTone = iota
+	TrendPositive
+)
+
+type StatCardProps struct {
+	Label     string
+	Value     string
+	Icon      templ.Component // e.g. icons.Users("w-5 h-5"); nil hides the tile icon
+	Trend     string          // optional pill text, e.g. "+3 this wk"
+	TrendTone TrendTone
+	Href      string // optional: makes the whole card a link
+}
+
+templ StatGrid(stats []StatCardProps) {
+	<section aria-label="Overview" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+		for _, s := range stats {
+			@StatCard(s)
+		}
+	</section>
+}
+
+templ StatCard(p StatCardProps) {
+	if p.Href != "" {
+		<a
+			href={ templ.SafeURL(p.Href) }
+			class="block bg-panel border border-border rounded-xl p-4 min-w-0 transition hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+		>
+			@statCardBody(p)
+		</a>
+	} else {
+		<div class="bg-panel border border-border rounded-xl p-4 min-w-0">
+			@statCardBody(p)
+		</div>
+	}
+}
+
+templ statCardBody(p StatCardProps) {
+	<div class="flex items-center justify-between gap-2">
+		if p.Icon != nil {
+			<span class="w-9 h-9 shrink-0 rounded-lg grid place-content-center bg-accent/15 text-accent-fg" aria-hidden="true">
+				@p.Icon
+			</span>
+		}
+		if p.Trend != "" {
+			<span
+				class={
+					"text-xs font-medium px-1.5 py-0.5 rounded-full truncate",
+					templ.KV("text-success bg-success/10", p.TrendTone == TrendPositive),
+					templ.KV("text-muted bg-std", p.TrendTone == TrendNeutral),
+				}
+			>
+				{ p.Trend }
+			</span>
+		}
+	</div>
+	<p class="mt-3 text-2xl font-semibold tabular-nums">{ p.Value }</p>
+	<p class="text-sm text-muted truncate">{ p.Label }</p>
+}

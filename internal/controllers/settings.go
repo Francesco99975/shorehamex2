@@ -35,7 +35,7 @@ func Settings(tab string) echo.HandlerFunc {
 			tab = "profile"
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)
@@ -724,7 +724,7 @@ func GetUser() echo.HandlerFunc {
 			CanDelete: auth.CanManageUser(enums.Role(auser.Role), enums.ActDelete, enums.Role(user.Role)),
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)

@@ -40,7 +40,7 @@ func Patients() echo.HandlerFunc {
 			return c.Redirect(http.StatusSeeOther, "/auth")
 		}
 
-		data := config.GetDefaultSite(c.Request())
+		data := config.GetDefaultSite(c.Request(), c.Path())
 		data.CurrentUser = user
 
 		data.Nonce = c.Get("nonce").(string)

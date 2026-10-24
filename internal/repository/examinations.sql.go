@@ -557,7 +557,7 @@ SELECT
                 jsonb_agg(
                     jsonb_build_object(
                         'test_code', a.test_code,
-                        'completed', (a.status = 'READY_FOR_REVIEW')
+                        'completed', (a.status = 'READY_FOR_REVIEW' OR a.status = 'COMPLETED')
                     )
                     ORDER BY a.sequence
                 ),

@@ -1,18 +1,81 @@
 package views
 
-import "github.com/Francesco99975/shorehamex2/internal/config"
-import "github.com/Francesco99975/shorehamex2/views/layouts"
+import (
+	"fmt"
 
-type DashboardProps struct {
-	Username string
-	Email    string
-	Fullname string
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/dashboard"
+	"github.com/Francesco99975/shorehamex2/views/icons"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+)
+
+// DashboardCounts is the raw aggregate a handler fills from the DB; the page
+// turns it into stat cards so trend wording lives in one place.
+type DashboardCounts struct {
+	ActivePatients      int
+	NewPatientsThisWeek int
+	AwaitingReview      int
+	InProgress          int
+	InProgressRemote    int
+	Completed7d         int
+	Completed7dDeltaPct int // vs previous 7 days
 }
 
-templ Dashboard(site config.Site, props DashboardProps) {
+type DashboardPageProps struct {
+	Counts    DashboardCounts
+	Stats     []dashboard.StatCardProps // overrides Counts when non-empty
+	Attention []dashboard.AttentionItemProps
+	Weekly    dashboard.WeeklyCompletionProps
+}
+
+func (p DashboardPageProps) stats() []dashboard.StatCardProps {
+	if len(p.Stats) > 0 {
+		return p.Stats
+	}
+	c := p.Counts
+	newTone := dashboard.TrendNeutral
+	if c.NewPatientsThisWeek > 0 {
+		newTone = dashboard.TrendPositive
+	}
+	doneTone := dashboard.TrendNeutral
+	if c.Completed7dDeltaPct > 0 {
+		doneTone = dashboard.TrendPositive
+	}
+	return []dashboard.StatCardProps{
+		{
+			Label: "Active patients", Value: fmt.Sprint(c.ActivePatients), Icon: icons.UsersIcon("w-5 h-5"),
+			Trend: fmt.Sprintf("+%d this wk", c.NewPatientsThisWeek), TrendTone: newTone, Href: "/patients",
+		},
+		{
+			Label: "Awaiting review", Value: fmt.Sprint(c.AwaitingReview), Icon: icons.Copy("w-5 h-5"),
+			Trend: "to review",
+		},
+		{
+			Label: "In progress", Value: fmt.Sprint(c.InProgress), Icon: icons.Clock("w-5 h-5"),
+			Trend: fmt.Sprintf("%d remote", c.InProgressRemote), Href: "/examinations?status=IN_PROGRESS",
+		},
+		{
+			Label: "Completed (7d)", Value: fmt.Sprint(c.Completed7d), Icon: icons.CheckIcon("w-5 h-5"),
+			Trend: dashboard.SignedPercent(c.Completed7dDeltaPct), TrendTone: doneTone,
+		},
+	}
+}
+
+templ DashboardPage(site config.Site, p DashboardPageProps) {
 	@layouts.AuthenticatedLayout(site) {
-		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
-			Dashboard
+		<main class="flex-1 min-w-0 p-3 sm:p-6 max-w-[1400px] w-full mx-auto">
+			<h1 class="sr-only">Dashboard</h1>
+			<div class="flex flex-col gap-6">
+				@dashboard.StatGrid(p.stats())
+				<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+					<div class="lg:col-span-2 min-w-0">
+						@dashboard.AttentionPanel(dashboard.AttentionPanelProps{Items: p.Attention, Csrf: site.CSRF})
+					</div>
+					<div class="flex flex-col gap-6 min-w-0">
+						@dashboard.WeeklyCompletion(p.Weekly)
+					</div>
+				</div>
+			</div>
 		</main>
 	}
 }

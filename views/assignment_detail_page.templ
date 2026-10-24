@@ -20,7 +20,7 @@ templ AssignmentDetailPage(site config.Site, p AssignmentDetailPageProps) {
 		<main class="flex-1 min-w-0 p-3 sm:p-6 max-w-[1400px] w-full mx-auto">
 			<div class="flex flex-col gap-6">
 				@results.BackLink(results.BackLinkProps{Href: p.BackHref, Label: "Back to examination"})
-				@results.AssignmentHeader(p.Header)
+				@results.AssignmentHeader(p.Header, site.CSRF)
 				if (p.Result == nil || p.Result.Empty()) && p.MMPIResults == nil {
 					@results.EmptyState("No results yet. They will appear here once the patient submits this assignment.")
 				} else {

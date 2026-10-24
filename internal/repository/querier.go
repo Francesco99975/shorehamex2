@@ -277,6 +277,32 @@ type Querier interface {
 	// header comment.
 	GetAssignmentResultForTaking(ctx context.Context, assignmentID uuid.UUID) (*AssignmentResult, error)
 	GetBackupCodeByHash(ctx context.Context, codeHash string) (*GetBackupCodeByHashRow, error)
+	// =============================================================================
+	// Dashboard queries
+	//
+	// Developer scoping: every query takes the nullable sqlc.narg(viewer_id).
+	//   viewer_id IS NULL -> no scoping (system / internal callers)
+	//   otherwise         -> <table>.is_developer_data = is_developer_user(viewer_id)
+	// so developers see only developer data and everyone else only real data.
+	//
+	// Three round trips per page render, all independent (run them concurrently
+	// with errgroup or a pgx.Batch if you like):
+	//     GetDashboardCounts   -> DashboardCounts (stat cards)
+	//     ListAttentionItems   -> []AttentionItemProps
+	//     GetWeeklyCompletion  -> WeeklyCompletionProps.Days (always 7 rows)
+	// =============================================================================
+	// One pass each over patients, in-progress examinations and the "hot" slice
+	// of assignments (awaiting review or completed in the last 14 days),
+	// aggregated with FILTER.
+	//
+	// active_patients      : every active (non-archived) patient.
+	// new_patients_week    : active patients created since @week_start
+	//                        (Monday 00:00 in the clinic timezone, computed in Go).
+	// awaiting_review      : assignments READY_FOR_REVIEW.
+	// in_progress(_remote) : examinations IN_PROGRESS (remote = mode REMOTE).
+	// completed_7d / prev  : assignments whose completed_at falls in the last
+	//                        7 days / the 7 days before that. Delta % is done in Go.
+	GetDashboardCounts(ctx context.Context, arg GetDashboardCountsParams) (*GetDashboardCountsRow, error)
 	GetEmailVerificationByID(ctx context.Context, id uuid.UUID) (*GetEmailVerificationByIDRow, error)
 	GetEmailVerificationByToken(ctx context.Context, token string) (*GetEmailVerificationByTokenRow, error)
 	GetEmailVerificationByUserID(ctx context.Context, userID uuid.UUID) (*GetEmailVerificationByUserIDRow, error)
@@ -398,6 +424,17 @@ type Querier interface {
 	GetUsersByRole(ctx context.Context, arg GetUsersByRoleParams) ([]*GetUsersByRoleRow, error)
 	GetUsersByRoleCount(ctx context.Context, role string) (int64, error)
 	GetUsersCount(ctx context.Context) (int64, error)
+	// Always returns exactly 7 rows (day_offset 0 = Monday ... 6 = Sunday) for
+	// the week starting at @week_start, bucketed in the clinic timezone @tz
+	// (e.g. 'America/Toronto').
+	//
+	// assigned  : assignments whose parent examination is DUE that day.
+	// completed : of those, how many the patient has finished (completed_at set),
+	//             so the per-day ratio can never exceed 100%.
+	//
+	// The range predicate on e.due_at uses idx_examinations_due_at; the
+	// date bucketing happens only on the (small) matching set.
+	GetWeeklyCompletion(ctx context.Context, arg GetWeeklyCompletionParams) ([]*GetWeeklyCompletionRow, error)
 	IncrementAssignmentDuration(ctx context.Context, arg IncrementAssignmentDurationParams) (*AssignmentResult, error)
 	IncrementAssignmentPage(ctx context.Context, arg IncrementAssignmentPageParams) (*Assignment, error)
 	// One assignment's full history (created, started, ready for review,
@@ -406,6 +443,28 @@ type Querier interface {
 	// One patient's timeline (patient detail view), most recent first.
 	ListActivityForPatient(ctx context.Context, arg ListActivityForPatientParams) ([]*ListActivityForPatientRow, error)
 	ListAssignmentsForExamination(ctx context.Context, arg ListAssignmentsForExaminationParams) ([]*ListAssignmentsForExaminationRow, error)
+	// "Needs your attention" = two kinds of rows, merged and limited in SQL:
+	//
+	//   REVIEW  : one row per assignment READY_FOR_REVIEW. Action = Review.
+	//   OVERDUE : one row per examination (REMOTE or IN_CLINIC) past due_at that
+	//             still has unfinished work (an assignment ASSIGNED / IN_PROGRESS).
+	//             Exams whose patient finished everything but are waiting on
+	//             review are NOT overdue — they already appear as REVIEW rows.
+	//             Action = Remind (REMOTE) / Resume (IN_CLINIC), decided by `mode`.
+	//
+	// Columns are identical across both branches so the UNION is flat:
+	//   item_id              : assignment id (REVIEW) / examination id (OVERDUE)
+	//   target_assignment_id : assignment the row links to — itself (REVIEW) /
+	//                          first unfinished by sequence (OVERDUE, used by Resume)
+	//   test_codes           : 'DASS-42' (REVIEW) / 'DASS-42, PCL-C' unfinished (OVERDUE)
+	//   status               : assignment status (OVERDUE: first unfinished by sequence)
+	//   event_at             : completed_at (REVIEW) / due_at (OVERDUE) -> note + sort
+	//   link_usable          : active, unexpired remote token exists (REMOTE OVERDUE only;
+	//                          FALSE means the Remind handler must issue a new link)
+	//   last_reminder_at     : newest assignment_reminders.sent_at (REMOTE OVERDUE only)
+	//
+	// Sort: REVIEW first, then oldest event first (longest-waiting on top).
+	ListAttentionItems(ctx context.Context, arg ListAttentionItemsParams) ([]*ListAttentionItemsRow, error)
 	// Assignment cards, ordered by sequence ascending. Served entirely by the
 	// unique (examination_id, sequence) index, so no sort step is needed.
 	ListExaminationAssignments(ctx context.Context, examinationID *uuid.UUID) ([]*ListExaminationAssignmentsRow, error)

@@ -83,8 +83,9 @@ templ AssignmentList(rows []AssignmentRowProps) {
 }
 
 templ AssignmentRow(a AssignmentRowProps) {
+	{{ url := "#"; if a.Status == enums.AssignmentStatuses.READY_FOR_REVIEW || a.Status == enums.AssignmentStatuses.COMPLETED { url = a.URL()} }}
 	<a
-		href={ templ.SafeURL(a.URL()) }
+		href={ templ.SafeURL(url) }
 		class="w-full bg-panel border border-border rounded-xl p-4 flex items-center gap-4 hover:border-primary/50 hover:shadow-md transition"
 	>
 		<span class="w-8 h-8 shrink-0 rounded-full bg-std border border-border grid place-content-center text-sm font-semibold text-muted">

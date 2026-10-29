@@ -163,7 +163,7 @@ func Dashboard() echo.HandlerFunc {
 				Title: "Completion this week",
 				Days: helpers.MapSlice(weeklyCompletition, func(i *repository.GetWeeklyCompletionRow) dashboard.DailyCompletion {
 					return dashboard.DailyCompletion{
-						Label:     time.Now().AddDate(0, 0, int(i.DayOffset)).Format("Mon"),
+						Label:     weekStart.AddDate(0, 0, int(i.DayOffset)).Format("Mon"),
 						Completed: int(i.Completed),
 						Assigned:  int(i.Assigned),
 					}

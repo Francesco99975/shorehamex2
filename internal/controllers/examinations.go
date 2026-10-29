@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -262,8 +263,9 @@ func Assign() echo.HandlerFunc {
 			}
 
 			remoteLink := boot.Environment.URL + "/examinating/" + examination.ID.String() + "?token=" + token.String()
+			expiry := examination.DueAt.Time.Add(time.Hour * 24 * 7)
 
-			helpers.ResendAssessmentInviatationTemplate(*examination.PatientEmail, examination.PatientName, remoteLink, examination.DueAt.Time.Format("2006-01-02 15:04:05"), strings.Join(payload.Instruments, ","), "casamedica@gmail.com")
+			helpers.ResendAssessmentInviatationTemplate(*examination.PatientEmail, examination.PatientName, remoteLink, expiry.Format("2006-01-02 15:04:05"), strings.Join(payload.Instruments, ","), "casamedica@gmail.com")
 
 			tokenHash, err := helpers.HashPassword(token.String())
 			if err != nil {
@@ -287,7 +289,7 @@ func Assign() echo.HandlerFunc {
 					TokenHash:      tokenHash,
 					TokenEncrypted: []byte(encryptedToken),
 					SentToEmail:    *examination.PatientEmail,
-					ExpiresAt:      examination.DueAt,
+					ExpiresAt:      pgtype.Timestamptz{Time: expiry, Valid: true},
 					ViewerID:       &auserUUID,
 				})
 				return err
@@ -337,6 +339,163 @@ func Assign() echo.HandlerFunc {
 
 		c.Response().Header().Set("HX-Redirect", "/examinating/"+examination.ID.String())
 		return c.NoContent(http.StatusSeeOther)
+	}
+}
+
+func RemindRemoteExamination() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("reminding examination", "RemindRemoteExamination", c.Request().Header.Get("X-Request-ID"))
+		examinationID := c.Param("id")
+
+		ctx := c.Request().Context()
+		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+		defer database.HandleTransaction(ctx, tx, &err)
+
+		repo := repository.New(tx)
+
+		auser, err := auth.GetActiveSession(c.Request(), repo)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get active session: %v", err))
+		}
+		if auser == nil {
+			return c.Redirect(http.StatusSeeOther, "/auth")
+		}
+
+		auserUUID, err := uuid.Parse(auser.ID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
+		}
+
+		exminationUUID, err := uuid.Parse(examinationID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusBadRequest, err)
+		}
+
+		examination, err := repo.GetExaminationWithPatient(ctx, repository.GetExaminationWithPatientParams{
+			ID:       exminationUUID,
+			ViewerID: &auserUUID,
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("get examination: %w", err))
+		}
+
+		if examination.RemoteToken == nil {
+			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("No remote token found"))
+		}
+
+		var remoteLink string
+
+		key, err := helpers.ParseBase64Key(boot.Environment.MetricSecret)
+		if err != nil {
+			slog.Error("Failed to parse metric secret", slog.String("error", err.Error()))
+			key = nil
+		}
+
+		decryptedToken, err := helpers.Decrypt(string(examination.RemoteToken), key)
+		if err != nil {
+			slog.Error("Failed to decrypt remote token", slog.String("error", err.Error()))
+			decryptedToken = nil
+		}
+
+		if decryptedToken != nil {
+			remoteLink = boot.Environment.URL + "/examinating/" + examination.ID.String() + "?token=" + string(decryptedToken)
+		} else {
+			slog.Warn("Failed to decrypt remote token on it being nil")
+		}
+
+		helpers.ResendAssessmentInviatationTemplate(*examination.PatientEmail, examination.PatientName, remoteLink, examination.DueAt.Time.Add(time.Hour*24*7).Format("2006-01-02 15:04:05"), fmt.Sprintf("%d assignments completed out of %d", examination.TestsCompleted, examination.TestsTotal), "casamedica@gmail.com")
+
+		tools.SetToastTrigger(c.Response(), enums.SuccessToast, "Examination Remind Resent Successfully!")
+		return c.NoContent(http.StatusAccepted)
+	}
+}
+
+func ResendRemoteExamination() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		herr := httperr.New("resending examination", "ResendRemoteExamination", c.Request().Header.Get("X-Request-ID"))
+		examinationID := c.Param("id")
+
+		ctx := c.Request().Context()
+		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+		defer database.HandleTransaction(ctx, tx, &err)
+
+		repo := repository.New(tx)
+
+		auser, err := auth.GetActiveSession(c.Request(), repo)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get active session: %v", err))
+		}
+		if auser == nil {
+			return c.Redirect(http.StatusSeeOther, "/auth")
+		}
+
+		auserUUID, err := uuid.Parse(auser.ID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
+		}
+
+		exminationUUID, err := uuid.Parse(examinationID)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusBadRequest, err)
+		}
+
+		examination, err := repo.GetExaminationWithPatient(ctx, repository.GetExaminationWithPatientParams{
+			ID:       exminationUUID,
+			ViewerID: &auserUUID,
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("get examination: %w", err))
+		}
+
+		token, err := boot.Slugerr.New()
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		remoteLink := boot.Environment.URL + "/examinating/" + examination.ID.String() + "?token=" + token.String()
+		expiry := time.Now().Add(time.Hour * 24 * 7).Add(time.Hour * 24 * 7)
+
+		helpers.ResendAssessmentInviatationTemplate(*examination.PatientEmail, examination.PatientName, remoteLink, expiry.Format("2006-01-02 15:04:05"), fmt.Sprintf("%d assignments completed out of %d", examination.TestsCompleted, examination.TestsTotal), "casamedica@gmail.com")
+
+		tokenHash, err := helpers.HashPassword(token.String())
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		key, err := helpers.ParseBase64Key(boot.Environment.MetricSecret)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		encryptedToken, err := helpers.Encrypt([]byte(token.String()), key)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		_, err = helpers.GenerateProofUUIDV4(database.IsPKCollision("remote_access_tokens_pkey"), func(id uuid.UUID) error {
+			_, err = repo.ResendRemoteAccessToken(ctx, repository.ResendRemoteAccessTokenParams{
+				ID:             id,
+				ExaminationID:  examination.ID,
+				TokenHash:      tokenHash,
+				TokenEncrypted: []byte(encryptedToken),
+				SentToEmail:    *examination.PatientEmail,
+				ExpiresAt:      pgtype.Timestamptz{Time: expiry, Valid: true},
+				ViewerID:       &auserUUID,
+			})
+			return err
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("send remote token: %w", err))
+		}
+
+		tools.SetToastTrigger(c.Response(), enums.SuccessToast, "Examination Link Resent Successfully!")
+		return c.NoContent(http.StatusAccepted)
 	}
 }
 

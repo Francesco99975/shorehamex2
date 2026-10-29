@@ -71,6 +71,11 @@ var pageMeta = map[string]PageMeta{
 		Description: "Clinical assessment console - Examination Details",
 		Indexable:   false,
 	},
+	"/examinating/:id": {
+		Title:       "Examination in progress",
+		Description: "Clinical assessment - Examination",
+		Indexable:   false,
+	},
 	"/assignments/:id": {
 		Title:       "Assignment Details",
 		Description: "Clinical assessment console - Assignment Details",

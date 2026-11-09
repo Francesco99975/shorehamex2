@@ -89,7 +89,7 @@ templ AuthenticatedLayout(site config.Site) {
 								Icon:    new(icons.Link("w-4 h-4")),
 							},
 						)
-						@ui.SimpleDatePicker("due_date", "Due Date", time.Now(), time.Now(), time.Now().Add(7*24*time.Hour))
+						@ui.SimpleDatePicker("due_date", "Due Date", time.Now(), time.Now(), time.Now().Add(3*4*7*24*time.Hour))
 						<div class="flex gap-2 mt-6">
 							@ui.Button(ui.ButtonProps{
 								Variant: ui.ButtonGhost,

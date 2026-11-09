@@ -67,9 +67,8 @@ templ PatientItem(patient PatientItemProps, csrf string) {
 					MaxW:     "350px",
 				}) {
 					<form
-						hx-put={ "/patients/" + patient.MRN }
-						hx-target={ "#" + uiid }
-						hx-swap="outerHTML"
+						hx-put={ "/patients/" + patient.MRN }W
+						hx-swap="none"
 						{ ui.WithLoading("update-patient-indicator")... }
 						@htmx:after-request={ "if(event.detail.successful) " + uiid + "editPatientModal = false" }
 						class="p-6 space-y-6"
@@ -178,8 +177,7 @@ templ PatientItem(patient PatientItemProps, csrf string) {
 							}
 							<form
 								hx-delete={ "/patients/" + patient.MRN }
-								hx-target={ "#" + uiid }
-								hx-swap="outerHTML"
+								hx-swap="none"
 								{ ui.WithLoading("delete-patient-indicator")... }
 								@htmx:after-request={ "if(event.detail.successful) " + uiid + "confirmDeleteModal = false" }
 							>

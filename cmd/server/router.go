@@ -171,7 +171,6 @@ Sitemap: %s/sitemap.xml
 	web.POST("/patients", controllers.AddPatient(), am.AuthMiddleware())
 	web.PUT("/patients/:id", controllers.UpdatePatient(), am.AuthMiddleware())
 	web.DELETE("/patients/:id", controllers.DeletePatient(), am.AuthMiddleware())
-	web.GET("/patients/search", controllers.SearchPatients(), am.AuthMiddleware())
 	web.GET("/patients/pick", controllers.PickPatient(), am.AuthMiddleware())
 
 	web.GET("/examinations", controllers.Examinations(), am.AuthMiddleware())

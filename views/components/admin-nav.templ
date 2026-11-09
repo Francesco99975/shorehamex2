@@ -2,6 +2,7 @@ package components
 
 import (
 	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/views/icons"
 	"github.com/Francesco99975/shorehamex2/views/ui"
 )
@@ -70,7 +71,14 @@ templ AsideAdminNav(site config.Site) {
 		// <div class="h-16 flex items-center gap-2 px-5 border-b border-border">
 		// 	@ui.HeaderBrand(site.AppName, site.Title, "/")
 		// </div>
-		@ui.DrawerNav(ui.AdminNavLinks...)
+
+		if site.CurrentUser.Role == enums.Roles.ADMIN.String() || site.CurrentUser.Role == enums.Roles.DEVELOPER.String(){
+			@ui.DrawerNav(ui.AdminNavLinks...)
+		} else {
+			@ui.DrawerNav(ui.UserNavLinks...)
+		}
+
+
 		<div class="p-3 border-t border-border">
 			<div class="flex items-center gap-3 px-2 py-2">
 				<div class="w-9 h-9 rounded-full bg-accent text-accent-fg grid place-content-center font-semibold text-sm uppercase">
@@ -90,7 +98,7 @@ templ AsideAdminNav(site config.Site) {
 					@submit="mobileMenuOpen = false"
 				>
 					@ui.IconButton(ui.ButtonProps{
-					
+
 						Variant: ui.ButtonDanger,
 						Type:    "submit",
 						FullW:   true,

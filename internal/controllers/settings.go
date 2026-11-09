@@ -800,6 +800,25 @@ func CreateUser() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("unable to generate UUID: %v", err))
 		}
 
+		token, err := helpers.GenerateBase62Token(8)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+		slog.Debug("Generated token", slog.String("token", token))
+
+		var ev *repository.CreateEmailVerificationRow
+
+		_, err = helpers.GenerateProofUUIDV4(database.IsPKCollision("email_verifications_pkey"), func(id uuid.UUID) error {
+			var insert_err error
+			ev, insert_err = repo.CreateEmailVerification(ctx, repository.CreateEmailVerificationParams{ID: uuid.New(), UserID: createdUser.ID, Token: token, Email: createdUser.Email, ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Duration(30 * time.Minute)), Valid: true}})
+			return insert_err
+		})
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
+		}
+
+		helpers.ResendEmailVerificationTemplate(createdUser.Email, ev.Token)
+
 		var userStatus string = "Inactive"
 		if createdUser.IsActive {
 			userStatus = "Active"

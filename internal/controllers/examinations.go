@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -29,37 +30,75 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type examinationFilter struct {
+	Status string
+	Mode   string
+	Page   int
+}
+
+// parseExaminationFilter whitelists every value; anything unknown is dropped.
+func parseExaminationFilter(c echo.Context) examinationFilter {
+	f := examinationFilter{Page: 1}
+
+	switch s := c.QueryParam("status"); s {
+	case string(repository.ExaminationStatusASSIGNED),
+		string(repository.ExaminationStatusINPROGRESS),
+		string(repository.ExaminationStatusCOMPLETED):
+		f.Status = s
+	}
+
+	switch m := c.QueryParam("mode"); m {
+	case enums.AssignmentModes.REMOTE.String(),
+		enums.AssignmentModes.IN_CLINIC.String():
+		f.Mode = m
+	}
+
+	if p, err := strconv.Atoi(c.QueryParam("page")); err == nil && p > 1 {
+		f.Page = p
+	}
+	return f
+}
+
+// href is the single place a pagination/filter URL is built.
+// Empty filters and page 1 are omitted, so every state has exactly one URL.
+func (f examinationFilter) href(page int) string {
+	v := url.Values{}
+	if f.Status != "" {
+		v.Set("status", f.Status)
+	}
+	if f.Mode != "" {
+		v.Set("mode", f.Mode)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	if q := v.Encode(); q != "" {
+		return "/examinations?" + q
+	}
+	return "/examinations"
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func Examinations() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		herr := httperr.New("examinations", "Examinations", c.Request().Header.Get("X-Request-ID"))
-		var status, mode *string
-		var page int32
-
-		isHX := c.Request().Header.Get("HX-Request") == "true"
-		isBoosted := c.Request().Header.Get("HX-Boosted") == "true"
+		req := c.Request()
 
 		// A boosted nav-in is still "a full page", just swapped by htmx.
 		// Only requests that are HTMX but NOT boosted are your internal
 		// filter/pagination fragment swaps.
-		isFragment := isHX && !isBoosted
+		isFragment := req.Header.Get("HX-Request") == "true" &&
+			req.Header.Get("HX-Boosted") != "true" &&
+			req.Header.Get("HX-History-Restore-Request") != "true"
 
-		if c.QueryParam("status") != "" {
-			status = new(c.QueryParam("status"))
-		}
-		if c.QueryParam("mode") != "" {
-			mode = new(c.QueryParam("mode"))
-		}
-		if c.QueryParam("page") != "" {
-			rawPage, err := strconv.ParseInt(c.QueryParam("page"), 10, 32)
-			if err != nil {
-				page = 1
-			} else {
-				page = int32(rawPage)
-			}
-		} else {
-			page = 1
-		}
-		// instruments := c.QueryParam("instruments")
+		f := parseExaminationFilter(c)
+		perPage := boot.Environment.PaginationWindow
 
 		repo := repository.New(database.Pool())
 
@@ -82,17 +121,37 @@ func Examinations() echo.HandlerFunc {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
 		}
 
+		ctx := req.Context()
+
+		total, err := repo.CountExaminationsFiltered(ctx, repository.CountExaminationsFilteredParams{
+			ViewerID: &userUUID,
+			Status:   nilIfEmpty(f.Status),
+			Mode:     nilIfEmpty(f.Mode),
+		})
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
 		slog.Debug("Authenticated user ID", slog.String("userID", userUUID.String()))
 
-		examinations, err := repo.ListExaminations(c.Request().Context(), repository.ListExaminationsParams{
+		totalPages := max(1, (int(total)+perPage-1)/perPage)
+		f.Page = min(f.Page, totalPages)
+
+		// Canonicalise: full-page loads with junk params, page=1, page=999,
+		// or reordered params get redirected to the one true URL.
+		if canonical := f.href(f.Page); !isFragment && req.URL.RequestURI() != canonical {
+			return c.Redirect(http.StatusFound, canonical)
+		}
+
+		examinations, err := repo.ListExaminations(ctx, repository.ListExaminationsParams{
 			PatientID:          nil,
 			ViewerID:           &userUUID,
 			OnlyOverdue:        nil,
 			OnlyAwaitingReview: nil,
-			Status:             status,
-			Mode:               mode,
-			RowOffset:          page - 1,
-			RowLimit:           int32(boot.Environment.PaginationWindow),
+			Status:             nilIfEmpty(f.Status),
+			Mode:               nilIfEmpty(f.Mode),
+			RowOffset:          int32((f.Page - 1) * perPage),
+			RowLimit:           int32(perPage),
 		})
 		if err != nil {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
@@ -133,6 +192,8 @@ func Examinations() echo.HandlerFunc {
 				}
 			}
 
+			slog.Debug("getting examinations datetime watch", "datetime", a.DueAt.Time.Format(time.RFC1123))
+
 			return components.ExaminationItemProps{
 				ID:          a.ID.String(),
 				Initials:    a.PatientName[0:2],
@@ -147,15 +208,27 @@ func Examinations() echo.HandlerFunc {
 			}
 		})
 
-		var html []byte
-		if isFragment {
-			html = helpers.MustRenderHTML(views.ExaminationsList(examinationItems, data.CSRF))
-			slog.Debug("examinations list", "count", len(examinationItems))
-			html = append(html, helpers.MustRenderHTML(components.EmptyState(len(examinationItems) == 0, true, "No examinations found matching your search criteria."))...)
-		} else {
-			html = helpers.MustRenderHTML(views.Examinations(data, examinationItems, len(examinations)))
+		c.Response().Header().Add("Vary", "HX-Request")
+
+		vm := views.ExaminationsViewData{
+			Items:   examinationItems,
+			Total:   int(total),
+			Page:    f.Page,
+			PerPage: perPage,
+			Status:  f.Status,
+			Mode:    f.Mode,
+			Href:    f.href,
 		}
 
+		var html []byte
+		if isFragment {
+			// Server owns the URL: this overrides any hx-push-url on the trigger,
+			// so empty params like ?status=&mode= never reach the address bar.
+			c.Response().Header().Set("HX-Push-Url", f.href(f.Page))
+			html = helpers.MustRenderHTML(views.ExaminationsResults(vm, data.CSRF))
+		} else {
+			html = helpers.MustRenderHTML(views.Examinations(data, vm))
+		}
 		return c.Blob(http.StatusOK, "text/html", html)
 
 	}

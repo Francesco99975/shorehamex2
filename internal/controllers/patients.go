@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/Francesco99975/shorehamex2/cmd/boot"
 	"github.com/Francesco99975/shorehamex2/internal/auth"
@@ -26,10 +28,106 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type patientFilter struct {
+	Query string
+	Page  int
+}
+
+func parsePatientFilter(c echo.Context) patientFilter {
+	f := patientFilter{Page: 1}
+
+	q := strings.TrimSpace(c.QueryParam("q"))
+	if r := []rune(q); len(r) > 100 {
+		q = string(r[:100])
+	}
+	f.Query = q
+
+	if p, err := strconv.Atoi(c.QueryParam("page")); err == nil && p > 1 {
+		f.Page = p
+	}
+	return f
+}
+
+func (f patientFilter) href(page int) string {
+	v := url.Values{}
+	if f.Query != "" {
+		v.Set("q", f.Query)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	if enc := v.Encode(); enc != "" {
+		return "/patients?" + enc
+	}
+	return "/patients"
+}
+
+// search returns the LIKE-escaped term for sqlc, or nil for "no search".
+func (f patientFilter) search() *string {
+	if f.Query == "" {
+		return nil
+	}
+	s := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query)
+	return &s
+}
+
+func deref[T any](p *T) (v T) {
+	if p != nil {
+		v = *p
+	}
+	return v
+}
+
+func patientInitials(name string) string {
+	r := []rune(strings.TrimSpace(name))
+	if len(r) > 2 {
+		r = r[:2]
+	}
+	return string(r)
+}
+
+// patientItemProps is the single Patient -> card mapping (nil-safe).
+func patientItemProps(p *repository.Patient) components.PatientItemProps {
+	var status *enums.AssignmentStatus
+	if p.ComputedStatus != nil {
+		s := enums.GetAssignmentStatusFromString(string(*p.ComputedStatus))
+		status = &s
+	}
+
+	lastActivity := "Never"
+	if p.LastActivityAt.Valid {
+		lastActivity = p.LastActivityAt.Time.Format("Mon, 02 Jan 2006")
+	}
+
+	sex := ""
+	if p.Sex != nil {
+		sex = string(*p.Sex)
+	}
+
+	return components.PatientItemProps{
+		MRN:              p.Mrn,
+		Initials:         patientInitials(p.FullName),
+		Name:             p.FullName,
+		Email:            deref(p.Email),
+		Phone:            deref(p.Phone),
+		DOB:              p.DateOfBirth.Time.Format("2006-01-02"),
+		Sex:              enums.GetSexFromString(sex),
+		LastActivity:     lastActivity,
+		AssignmentStatus: status,
+	}
+}
+
 func Patients() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		herr := httperr.New("patients", "Patients", c.Request().Header.Get("X-Request-ID"))
+		req := c.Request()
 
+		isFragment := req.Header.Get("HX-Request") == "true" &&
+			req.Header.Get("HX-Boosted") != "true" &&
+			req.Header.Get("HX-History-Restore-Request") != "true"
+
+		f := parsePatientFilter(c)
+		perPage := boot.Environment.PaginationWindow
 		repo := repository.New(database.Pool())
 
 		user, err := auth.GetActiveSession(c.Request(), repo)
@@ -53,150 +151,60 @@ func Patients() echo.HandlerFunc {
 
 		slog.Debug("Authenticated user ID", slog.String("userID", userID.String()))
 
-		rawPatients, err := repo.ListPatients(c.Request().Context(), repository.ListPatientsParams{
+		ctx := req.Context()
+
+		total, err := repo.CountPatientsFiltered(ctx, repository.CountPatientsFilteredParams{
+			ViewerID: &userID,
+			Search:   f.search(),
+		})
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
+		totalPages := max(1, (int(total)+perPage-1)/perPage)
+		f.Page = min(f.Page, totalPages)
+
+		if canonical := f.href(f.Page); !isFragment && req.URL.RequestURI() != canonical {
+			return c.Redirect(http.StatusFound, canonical)
+		}
+
+		rawPatients, err := repo.ListPatients(ctx, repository.ListPatientsParams{
 			ViewerID:  &userID,
-			RowOffset: 0,
-			RowLimit:  25,
+			Search:    f.search(),
+			RowOffset: int32((f.Page - 1) * perPage),
+			RowLimit:  int32(perPage),
 		})
 		if err != nil {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
 		}
 
-		numberOfPatients, err := repo.CountActivePatients(c.Request().Context(), &userID)
-		if err != nil {
-			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		vm := views.PatientsViewData{
+			Items:   helpers.MapSlice(rawPatients, patientItemProps),
+			Total:   int(total),
+			Page:    f.Page,
+			PerPage: perPage,
+			Query:   f.Query,
+			Href:    f.href,
 		}
 
-		patients := helpers.MapSlice(rawPatients, func(rawPatient *repository.Patient) components.PatientItemProps {
-			initials := rawPatient.FullName[0:2]
-			var status *enums.AssignmentStatus
-			if rawPatient.ComputedStatus != nil {
-				status = new(enums.AssignmentStatus)
-				*status = enums.GetAssignmentStatusFromString(string(*rawPatient.ComputedStatus))
-			}
+		c.Response().Header().Add("Vary", "HX-Request")
 
-			var lastActivity string
-			if rawPatient.LastActivityAt.Valid {
-				lastActivity = rawPatient.LastActivityAt.Time.Format("Mon, 02 Jan 2006")
-			} else {
-				lastActivity = "Never"
-			}
-
-			return components.PatientItemProps{
-				MRN:              rawPatient.Mrn,
-				Initials:         initials,
-				Name:             rawPatient.FullName,
-				Email:            *rawPatient.Email,
-				Phone:            *rawPatient.Phone,
-				DOB:              rawPatient.DateOfBirth.Time.Format("2006-01-02"),
-				Sex:              enums.GetSexFromString(string(*rawPatient.Sex)),
-				LastActivity:     lastActivity,
-				AssignmentStatus: status,
-			}
-		})
-
-		total := int(numberOfPatients) - len(patients)
-
-		html := helpers.MustRenderHTML(views.Patients(data, patients, total))
-
+		var html []byte
+		if isFragment {
+			c.Response().Header().Set("HX-Push-Url", f.href(f.Page))
+			html = helpers.MustRenderHTML(views.PatientsResults(vm, data.CSRF))
+		} else {
+			html = helpers.MustRenderHTML(views.Patients(data, vm))
+		}
 		return c.Blob(http.StatusOK, "text/html", html)
 
-	}
-}
-
-func SearchPatients() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		herr := httperr.New("searching patients", "SearchPatients", c.Request().Header.Get("X-Request-ID"))
-		search := c.QueryParam("search_patients")
-
-		slog.Debug("searching patients", "search", search)
-		pageStr := c.QueryParam("page")
-		var page int
-
-		page, err := strconv.Atoi(pageStr)
-		if err != nil {
-			page = 1
-		}
-
-		ctx := c.Request().Context()
-
-		repo := repository.New(database.Pool())
-
-		auser, err := auth.GetActiveSession(c.Request(), repo)
-		if err != nil {
-			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get active session: %v", err))
-		}
-		if auser == nil {
-			return c.Redirect(http.StatusSeeOther, "/auth")
-		}
-
-		auserUUID, err := uuid.Parse(auser.ID)
-		if err != nil {
-			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
-		}
-
-		numberOfPatients, err := repo.CountActivePatients(ctx, &auserUUID)
-		if err != nil {
-			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to count active patients: %v", err))
-		}
-
-		rawPatients, err := repo.SearchPatients(ctx, repository.SearchPatientsParams{
-			ViewerID: &auserUUID,
-			Query:    &search,
-			RowLimit: int32(boot.Environment.PaginationWindow),
-			Page:     page,
-		})
-
-		slog.Debug("searching patients", "search", search, "count", len(rawPatients))
-
-		patients := helpers.MapSlice(rawPatients, func(rawPatient *repository.Patient) components.PatientItemProps {
-
-			initials := rawPatient.FullName[0:2]
-			var status *enums.AssignmentStatus
-			if rawPatient.ComputedStatus != nil {
-				status = new(enums.AssignmentStatus)
-				*status = enums.GetAssignmentStatusFromString(string(*rawPatient.ComputedStatus))
-			}
-
-			var lastActivity string
-			if rawPatient.LastActivityAt.Valid {
-				lastActivity = rawPatient.LastActivityAt.Time.Format("Mon, 02 Jan 2006")
-			} else {
-				lastActivity = "Never"
-			}
-
-			return components.PatientItemProps{
-				MRN:              rawPatient.Mrn,
-				Initials:         initials,
-				Name:             rawPatient.FullName,
-				Email:            *rawPatient.Email,
-				Phone:            *rawPatient.Phone,
-				DOB:              rawPatient.DateOfBirth.Time.Format("2006-01-02"),
-				Sex:              enums.GetSexFromString(string(*rawPatient.Sex)),
-				LastActivity:     lastActivity,
-				AssignmentStatus: status,
-			}
-		})
-
-		total := int(numberOfPatients) - len(patients)
-
-		if err != nil {
-			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("unable to get users: %v", err))
-		}
-
-		csrf := c.Get("csrf").(string)
-
-		html := helpers.MustRenderHTML(views.PatientsList(patients, csrf))
-		html = append(html, helpers.MustRenderHTML(views.PatientsPagination(int(total), page, boot.Environment.PaginationWindow, true))...)
-
-		return c.Blob(http.StatusOK, "text/html", html)
 	}
 }
 
 func PickPatient() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		herr := httperr.New("picking patient", "PickPatient", c.Request().Header.Get("X-Request-ID"))
-		search := c.QueryParam("search_patients")
+		search := c.QueryParam("patient")
 
 		ctx := c.Request().Context()
 
@@ -215,16 +223,16 @@ func PickPatient() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to parse user id: %v", err))
 		}
 
-		rawPatients, err := repo.SearchPatients(ctx, repository.SearchPatientsParams{
+		rawPatients, err := repo.PickPatientSearch(ctx, repository.PickPatientSearchParams{
 			ViewerID: &auserUUID,
-			Query:    &search,
+			Query:    search,
 			RowLimit: int32(boot.Environment.PaginationWindow),
 			Page:     1,
 		})
 
 		slog.Debug("picking patients", "search", search, "count", len(rawPatients))
 
-		patients := helpers.MapSlice(rawPatients, func(rawPatient *repository.Patient) ui.SearchResultsItemProps {
+		patients := helpers.MapSlice(rawPatients, func(rawPatient *repository.PickPatientSearchRow) ui.SearchResultsItemProps {
 			return ui.SearchResultsItemProps{
 				Name: rawPatient.FullName,
 				ID:   rawPatient.ID.String(),
@@ -271,11 +279,11 @@ func AddPatient() echo.HandlerFunc {
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
-		var newPatient *repository.Patient
+
 		newPatientID, newPatientMRN, err := helpers.GenerateProofUUIDv7WithMRN(database.NewClassifier("patients_pkey", "patients_mrn_key"), func(id uuid.UUID, mrn string) error {
 			var err error
 
-			newPatient, err = repo.CreatePatient(ctx, repository.CreatePatientParams{
+			_, err = repo.CreatePatient(ctx, repository.CreatePatientParams{
 				ID:       id,
 				Mrn:      mrn,
 				FullName: payload.FullName,
@@ -302,21 +310,8 @@ func AddPatient() echo.HandlerFunc {
 
 		slog.Info("patient created", "id", newPatientID, "mrn", newPatientMRN)
 
-		csrf := c.Get("csrf").(string)
-
-		html := helpers.MustRenderHTML(components.PatientItem(components.PatientItemProps{
-			MRN:              newPatient.Mrn,
-			Initials:         newPatient.FullName[0:2],
-			Name:             newPatient.FullName,
-			Email:            *newPatient.Email,
-			Phone:            *newPatient.Phone,
-			DOB:              newPatient.DateOfBirth.Time.Format("2006-01-02"),
-			Sex:              enums.GetSexFromString(string(*newPatient.Sex)),
-			LastActivity:     "Never",
-			AssignmentStatus: nil,
-		}, csrf))
-
-		return c.Blob(http.StatusOK, "text/html", []byte(html))
+		c.Response().Header().Set("HX-Trigger", "patients-changed")
+		return c.NoContent(http.StatusNoContent)
 	}
 }
 
@@ -357,7 +352,7 @@ func UpdatePatient() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		updatedPatient, err := repo.UpdatePatientDetails(ctx, repository.UpdatePatientDetailsParams{
+		_, err = repo.UpdatePatientDetails(ctx, repository.UpdatePatientDetailsParams{
 			Mrn:      mrn,
 			FullName: payload.FullName,
 			Email:    &payload.Email,
@@ -369,26 +364,15 @@ func UpdatePatient() echo.HandlerFunc {
 			Sex:      &payload.Sex,
 			ViewerID: &auserUUID,
 		})
-
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Not found, OR outside the viewer's partition. Same answer for both.
+			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("patient not found"))
+		}
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
-
-		csrf := c.Get("csrf").(string)
-
-		html := helpers.MustRenderHTML(components.PatientItem(components.PatientItemProps{
-			MRN:              updatedPatient.Mrn,
-			Initials:         updatedPatient.FullName[0:2],
-			Name:             updatedPatient.FullName,
-			Email:            *updatedPatient.Email,
-			Phone:            *updatedPatient.Phone,
-			DOB:              updatedPatient.DateOfBirth.Time.Format("2006-01-02"),
-			Sex:              enums.GetSexFromString(string(*updatedPatient.Sex)),
-			LastActivity:     "Never",
-			AssignmentStatus: nil,
-		}, csrf))
-
-		return c.Blob(http.StatusOK, "text/html", []byte(html))
+		c.Response().Header().Set("HX-Trigger", "patients-changed")
+		return c.NoContent(http.StatusNoContent)
 	}
 }
 
@@ -420,13 +404,18 @@ func DeletePatient() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		if err := repo.DeletePatient(ctx, repository.DeletePatientParams{
+		rows, err := repo.DeletePatient(ctx, repository.DeletePatientParams{
 			Mrn:      mrn,
 			ViewerID: &auserUUID,
-		}); err != nil {
+		})
+		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
+		if rows == 0 {
+			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("patient not found"))
+		}
 
+		c.Response().Header().Set("HX-Trigger", "patients-changed")
 		return c.NoContent(http.StatusOK)
 	}
 }

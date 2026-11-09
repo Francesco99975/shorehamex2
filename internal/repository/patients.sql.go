@@ -31,6 +31,43 @@ func (q *Queries) CountActivePatients(ctx context.Context, viewerID *uuid.UUID) 
 	return count, err
 }
 
+const countPatientsFiltered = `-- name: CountPatientsFiltered :one
+WITH q AS (
+    SELECT
+        NULLIF($2::text, '') AS raw,
+        replace(replace(replace(NULLIF($2::text, ''),
+            '\', '\\'), '%', '\%'), '_', '\_') AS esc
+)
+SELECT COUNT(*)
+FROM patients p
+CROSS JOIN q
+WHERE p.is_active
+AND (
+    $1::uuid IS NULL
+    OR p.is_developer_data = (SELECT is_developer_user($1::uuid))
+)
+AND (
+    q.raw IS NULL
+    OR p.full_name ILIKE '%' || q.esc || '%'
+    OR p.mrn       ILIKE '%' || q.esc || '%'
+    OR p.full_name % q.raw
+    OR p.mrn       % q.raw
+)
+`
+
+type CountPatientsFilteredParams struct {
+	ViewerID *uuid.UUID `json:"viewer_id"`
+	Search   *string    `json:"search"`
+}
+
+// KEEP THE CTE AND WHERE IDENTICAL TO ListPatients.
+func (q *Queries) CountPatientsFiltered(ctx context.Context, arg CountPatientsFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPatientsFiltered, arg.ViewerID, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPatient = `-- name: CreatePatient :one
 INSERT INTO patients (
     id, mrn, full_name, email, phone, date_of_birth, sex, created_by
@@ -88,7 +125,7 @@ func (q *Queries) CreatePatient(ctx context.Context, arg CreatePatientParams) (*
 	return &i, err
 }
 
-const deletePatient = `-- name: DeletePatient :exec
+const deletePatient = `-- name: DeletePatient :execrows
 DELETE FROM patients
 WHERE mrn = $1
   AND (
@@ -109,9 +146,12 @@ type DeletePatientParams struct {
 // (ON DELETE CASCADE), which in turn cascade to their results — see the
 // header comment if real, permanent removal of clinical records isn't
 // actually the intended behavior for the ADMIN/USER side of this.
-func (q *Queries) DeletePatient(ctx context.Context, arg DeletePatientParams) error {
-	_, err := q.db.Exec(ctx, deletePatient, arg.Mrn, arg.ViewerID)
-	return err
+func (q *Queries) DeletePatient(ctx context.Context, arg DeletePatientParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePatient, arg.Mrn, arg.ViewerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getPatient = `-- name: GetPatient :one
@@ -224,13 +264,37 @@ func (q *Queries) GetPatientByMRN(ctx context.Context, arg GetPatientByMRNParams
 }
 
 const listPatients = `-- name: ListPatients :many
-SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
-WHERE is_active
-  AND (
-      $1::uuid IS NULL
-      OR is_developer_data = is_developer_user($1::uuid)
-  )
-ORDER BY full_name
+WITH q AS (
+    SELECT
+        NULLIF($4::text, '') AS raw,
+        replace(replace(replace(NULLIF($4::text, ''),
+          '\', '\\'), '%', '\%'), '_', '\_') AS esc
+)
+SELECT p.id, p.mrn, p.full_name, p.email, p.phone, p.date_of_birth, p.sex, p.created_by, p.is_developer_data, p.is_active, p.computed_status, p.last_activity_at, p.created_at, p.updated_at, p.notes
+FROM patients p
+CROSS JOIN q
+WHERE p.is_active
+AND (
+    $1::uuid IS NULL
+    OR p.is_developer_data = (SELECT is_developer_user($1::uuid))
+)
+AND (
+    q.raw IS NULL
+    OR p.full_name ILIKE '%' || q.esc || '%'
+    OR p.mrn       ILIKE '%' || q.esc || '%'
+    OR p.full_name % q.raw
+    OR p.mrn       % q.raw
+)
+ORDER BY
+    CASE
+        WHEN q.raw IS NULL THEN 0
+        WHEN p.full_name ILIKE q.esc || '%' OR p.mrn ILIKE q.esc || '%' THEN 0
+        WHEN p.full_name ILIKE '%' || q.esc || '%' OR p.mrn ILIKE '%' || q.esc || '%' THEN 1
+        ELSE 2
+    END,
+    GREATEST(similarity(p.full_name, q.raw), similarity(p.mrn, q.raw)) DESC NULLS LAST,
+    p.full_name,
+    p.id
 LIMIT $3 OFFSET $2
 `
 
@@ -238,13 +302,19 @@ type ListPatientsParams struct {
 	ViewerID  *uuid.UUID `json:"viewer_id"`
 	RowOffset int32      `json:"row_offset"`
 	RowLimit  int32      `json:"row_limit"`
+	Search    *string    `json:"search"`
 }
 
-// Main patient directory. Alphabetical by name; swap to
-// last_activity_at DESC if the roster should read more like a worklist
-// than a directory — a judgment call, easy to flip either way.
+// Directory + search in one query. search NULL/” = plain directory.
+// Match: substring (ILIKE) OR fuzzy (trigram %), same as SearchPatients2's fuzzy path.
+// Order: prefix > substring > fuzzy-only, then similarity (your old rank), then name, then id.
 func (q *Queries) ListPatients(ctx context.Context, arg ListPatientsParams) ([]*Patient, error) {
-	rows, err := q.db.Query(ctx, listPatients, arg.ViewerID, arg.RowOffset, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listPatients,
+		arg.ViewerID,
+		arg.RowOffset,
+		arg.RowLimit,
+		arg.Search,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -341,6 +411,102 @@ func (q *Queries) ListPatientsByStatus(ctx context.Context, arg ListPatientsBySt
 	return items, nil
 }
 
+const pickPatientSearch = `-- name: PickPatientSearch :many
+WITH search_input AS (
+    SELECT $4::text AS raw
+)
+SELECT
+    id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes, raw,
+    GREATEST(
+        similarity(full_name, raw),
+        similarity(mrn, raw)
+    ) AS rank
+FROM patients, search_input
+WHERE
+    is_active
+    AND (
+        $1::uuid IS NULL
+        OR is_developer_data = is_developer_user($1::uuid)
+    )
+    AND (
+        full_name % raw
+        OR mrn % raw
+    )
+ORDER BY rank DESC
+LIMIT $3
+OFFSET ($2 - 1) * $3
+`
+
+type PickPatientSearchParams struct {
+	ViewerID *uuid.UUID  `json:"viewer_id"`
+	Page     interface{} `json:"page"`
+	RowLimit int32       `json:"row_limit"`
+	Query    string      `json:"query"`
+}
+
+type PickPatientSearchRow struct {
+	ID              uuid.UUID          `json:"id"`
+	Mrn             string             `json:"mrn"`
+	FullName        string             `json:"full_name"`
+	Email           *string            `json:"email"`
+	Phone           *string            `json:"phone"`
+	DateOfBirth     pgtype.Date        `json:"date_of_birth"`
+	Sex             *Sex               `json:"sex"`
+	CreatedBy       *uuid.UUID         `json:"created_by"`
+	IsDeveloperData bool               `json:"is_developer_data"`
+	IsActive        bool               `json:"is_active"`
+	ComputedStatus  *AssignmentStatus  `json:"computed_status"`
+	LastActivityAt  pgtype.Timestamptz `json:"last_activity_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Notes           string             `json:"notes"`
+	Raw             string             `json:"raw"`
+	Rank            interface{}        `json:"rank"`
+}
+
+func (q *Queries) PickPatientSearch(ctx context.Context, arg PickPatientSearchParams) ([]*PickPatientSearchRow, error) {
+	rows, err := q.db.Query(ctx, pickPatientSearch,
+		arg.ViewerID,
+		arg.Page,
+		arg.RowLimit,
+		arg.Query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*PickPatientSearchRow
+	for rows.Next() {
+		var i PickPatientSearchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Mrn,
+			&i.FullName,
+			&i.Email,
+			&i.Phone,
+			&i.DateOfBirth,
+			&i.Sex,
+			&i.CreatedBy,
+			&i.IsDeveloperData,
+			&i.IsActive,
+			&i.ComputedStatus,
+			&i.LastActivityAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Notes,
+			&i.Raw,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchPatients = `-- name: SearchPatients :many
 SELECT id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes FROM patients
 WHERE is_active
@@ -395,6 +561,105 @@ func (q *Queries) SearchPatients(ctx context.Context, arg SearchPatientsParams) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Notes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchPatients2 = `-- name: SearchPatients2 :many
+WITH search_input AS (
+    SELECT
+        $2::text AS raw
+)
+SELECT
+    id, mrn, full_name, email, phone, date_of_birth, sex, created_by, is_developer_data, is_active, computed_status, last_activity_at, created_at, updated_at, notes, raw,
+    GREATEST(
+        similarity(full_name, raw),
+        similarity(mrn, raw)
+    ) AS rank
+FROM patients, search_input
+WHERE
+    is_active
+    AND (
+        $1::uuid IS NULL
+        OR is_developer_data = is_developer_user($1::uuid)
+    )
+    AND
+    (
+        $2 = ''
+        OR full_name % raw
+        OR mrn % raw
+    )
+ORDER BY rank DESC
+LIMIT $4
+OFFSET ($3 - 1) * $4
+`
+
+type SearchPatients2Params struct {
+	ViewerID *uuid.UUID  `json:"viewer_id"`
+	Query    interface{} `json:"query"`
+	Page     interface{} `json:"page"`
+	RowLimit int32       `json:"row_limit"`
+}
+
+type SearchPatients2Row struct {
+	ID              uuid.UUID          `json:"id"`
+	Mrn             string             `json:"mrn"`
+	FullName        string             `json:"full_name"`
+	Email           *string            `json:"email"`
+	Phone           *string            `json:"phone"`
+	DateOfBirth     pgtype.Date        `json:"date_of_birth"`
+	Sex             *Sex               `json:"sex"`
+	CreatedBy       *uuid.UUID         `json:"created_by"`
+	IsDeveloperData bool               `json:"is_developer_data"`
+	IsActive        bool               `json:"is_active"`
+	ComputedStatus  *AssignmentStatus  `json:"computed_status"`
+	LastActivityAt  pgtype.Timestamptz `json:"last_activity_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Notes           string             `json:"notes"`
+	Raw             string             `json:"raw"`
+	Rank            interface{}        `json:"rank"`
+}
+
+func (q *Queries) SearchPatients2(ctx context.Context, arg SearchPatients2Params) ([]*SearchPatients2Row, error) {
+	rows, err := q.db.Query(ctx, searchPatients2,
+		arg.ViewerID,
+		arg.Query,
+		arg.Page,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*SearchPatients2Row
+	for rows.Next() {
+		var i SearchPatients2Row
+		if err := rows.Scan(
+			&i.ID,
+			&i.Mrn,
+			&i.FullName,
+			&i.Email,
+			&i.Phone,
+			&i.DateOfBirth,
+			&i.Sex,
+			&i.CreatedBy,
+			&i.IsDeveloperData,
+			&i.IsActive,
+			&i.ComputedStatus,
+			&i.LastActivityAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Notes,
+			&i.Raw,
+			&i.Rank,
 		); err != nil {
 			return nil, err
 		}

@@ -32,7 +32,7 @@ const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 // The 5 extra symbols make a 37-symbol set used only for the check character.
 // 37 is prime, which gives good detection of single-digit and transposition
 // errors for a mod-37 checksum.
-const checkAlphabet = alphabet + "*~$=U"
+const checkAlphabet = alphabet + "*~$%U"
 
 const (
 

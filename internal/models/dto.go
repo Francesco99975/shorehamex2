@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"regexp"
 	"time"
@@ -31,6 +32,15 @@ func (p *AssignPayload) DateToTime() time.Time {
 	if err != nil {
 		return time.Time{}
 	}
+
+	now := time.Now()
+	t = time.Date(
+		t.Year(), t.Month(), t.Day(),
+		now.Hour(), now.Minute(), now.Second(),
+		now.Nanosecond(),
+		now.Location(),
+	)
+	slog.Debug("assign date to time", "datetime", t.Format(time.RFC1123))
 	return t
 }
 

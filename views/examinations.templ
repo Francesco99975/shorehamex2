@@ -1,7 +1,6 @@
 package views
 
 import (
-	"github.com/Francesco99975/shorehamex2/cmd/boot"
 	"github.com/Francesco99975/shorehamex2/internal/config"
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/views/components"
@@ -28,62 +27,65 @@ func modeFilterOpts() []ui.DropOption {
 	}
 }
 
-// instrumentCodes are the test_definitions codes offered as multi-select chips.
-func instrumentCodes() []string {
-	return []string{"ASQ", "BAI", "BDI", "P3", "MMPI"}
+type ExaminationsViewData struct {
+	Items   []components.ExaminationItemProps
+	Total   int
+	Page    int
+	PerPage int
+	Status  string
+	Mode    string
+	Href    func(page int) string
 }
 
-templ Examinations(site config.Site, examinations []components.ExaminationItemProps, total int) {
+func (v ExaminationsViewData) totalPages() int {
+	return max(1, (v.Total+v.PerPage-1)/v.PerPage)
+}
+
+templ Examinations(site config.Site, vm ExaminationsViewData) {
 	@layouts.AuthenticatedLayout(site) {
 		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
 			<div class="space-y-4">
-				<!-- Every filter control lives inside this form so each HTMX request
-				     carries the full filter set (status + mode + instruments). -->
-				<div
-					class="bg-panel border border-border rounded-xl p-4"
-				>
+				<div class="bg-panel border border-border rounded-xl p-4">
 					<div id="examinations-filters" class="flex flex-wrap items-start gap-4">
 						@ui.FilterSelect(ui.FilterSelectProps{
 							Name:        "status",
 							Label:       "Status",
 							Placeholder: "Any status",
 							Opts:        statusFilterOpts(),
-							URL:         "examinations",
-							Target:      "examinations-list",
-							Include:     "#examinations-filters [name='mode'], #examinations-filters [name='instruments'], [name='page']",
-							PushURL:     true,
+							Selected:    vm.Status,
+							URL:         "/examinations",
+							Target:      "examinations-results",
+							Include:     "#examinations-filters [name='mode']",
 						})
 						@ui.FilterSelect(ui.FilterSelectProps{
 							Name:        "mode",
 							Label:       "Delivery",
 							Placeholder: "Any delivery",
 							Opts:        modeFilterOpts(),
-							URL:         "examinations",
-							Target:      "examinations-list",
-							Include:     "[name='status'], [name='instruments'], [name='page']",
-							PushURL:     true,
+							Selected:    vm.Mode,
+							URL:         "/examinations",
+							Target:      "examinations-results",
+							Include:     "#examinations-filters [name='status']",
 						})
-						// @ui.FilterChips(ui.FilterChipsProps{
-						// 	Name:    "instruments",
-						// 	Label:   "Instruments",
-						// 	Options: instrumentCodes(),
-						// 	URL:     "examinations/search",
-						// 	Target:  "examinations-list",
-						// 	Include: "[name='status'], [name='mode']",
-						// 	PushURL: true,
-						// })
 					</div>
 				</div>
 			</div>
-			@components.EmptyState(len(examinations) == 0, false, "No Examinations Yet...")
-			<div id="examinations-list" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mx-auto my-4">
-				@ExaminationsList(examinations, site.CSRF)
+			<div id="examinations-results">
+				@ExaminationsResults(vm, site.CSRF)
 			</div>
-			if total > boot.Environment.PaginationWindow {
-				@ExaminationsPagination(total, 1, boot.Environment.PaginationWindow, false)
-			}
 		</main>
 	}
+}
+
+// ExaminationsResults is the inner content of #examinations-results. It is
+// both part of the full page and the entire fragment response, so there is no
+// OOB swap and the pager always exists.
+templ ExaminationsResults(vm ExaminationsViewData, csrf string) {
+	<div id="examinations-list" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mx-auto my-4">
+		@ExaminationsList(vm.Items, csrf)
+	</div>
+	@components.EmptyState(len(vm.Items) == 0, false, "No examinations found matching your search criteria.")
+	@ExaminationsPagination(vm)
 }
 
 templ ExaminationsList(examinations []components.ExaminationItemProps, csrf string) {
@@ -92,29 +94,26 @@ templ ExaminationsList(examinations []components.ExaminationItemProps, csrf stri
 	}
 }
 
-templ ExaminationsPagination(total int, page int, perPage int, oob bool) {
+templ ExaminationsPagination(vm ExaminationsViewData) {
 	<div
 		id="examinations-pagination"
-		if oob {
-			hx-swap-oob="true"
-		}
 		class="px-4 sm:px-6 py-4 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-3"
 	>
-		<p class="text-sm text-primary/60">
-			Showing <span class="font-medium text-primary">{ strconv.Itoa((page-1)*perPage + 1) }-{ strconv.Itoa(min(page*perPage, total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(total) }</span>
-		</p>
-		<div class="flex items-center gap-1">
-			@ui.Pagination(ui.PaginationProps{
-				Current:    page,
-				TotalRows:  total,
-				TotalPages: (total + perPage - 1) / perPage,
-				Window:     perPage,
-				URL:        "examinations",
-				Target:     "examinations-list",
-				Swap:       "innerHTML",
-				Include:    "#examinations-filters [name='status'], #examinations-filters [name='mode'], #examinations-filters [name='instruments']",
-				PushURL:    false,
-			})
-		</div>
+		if vm.Total > 0 {
+			<p class="text-sm text-primary/60">
+				Showing <span class="font-medium text-primary">{ strconv.Itoa((vm.Page-1)*vm.PerPage + 1) }-{ strconv.Itoa(min(vm.Page*vm.PerPage, vm.Total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(vm.Total) }</span>
+			</p>
+			<div class="flex items-center gap-1">
+				@ui.Pagination(ui.PaginationProps{
+					Current:    vm.Page,
+					TotalRows:  vm.Total,
+					TotalPages: vm.totalPages(),
+					Window:     vm.PerPage,
+					Href:       vm.Href,
+					Target:     "examinations-results",
+					Swap:       "innerHTML show:window:top",
+				})
+			</div>
+		}
 	</div>
 }

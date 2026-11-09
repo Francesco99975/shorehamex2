@@ -45,7 +45,11 @@ type Querier interface {
 	// Counts / badges (dashboard)
 	// =============================================================================
 	CountExaminationsByStatus(ctx context.Context, viewerID *uuid.UUID) ([]*CountExaminationsByStatusRow, error)
+	// KEEP THE WHERE CLAUSE IDENTICAL TO ListExaminations.
+	CountExaminationsFiltered(ctx context.Context, arg CountExaminationsFilteredParams) (int64, error)
 	CountOverdueExaminations(ctx context.Context, viewerID *uuid.UUID) (int64, error)
+	// KEEP THE CTE AND WHERE IDENTICAL TO ListPatients.
+	CountPatientsFiltered(ctx context.Context, arg CountPatientsFilteredParams) (int64, error)
 	CountRemindersForExamination(ctx context.Context, arg CountRemindersForExaminationParams) (int64, error)
 	CountRoles(ctx context.Context) (int64, error)
 	// How many assignments reference this instrument. The Developer CRUD
@@ -215,7 +219,7 @@ type Querier interface {
 	// (ON DELETE CASCADE), which in turn cascade to their results — see the
 	// header comment if real, permanent removal of clinical records isn't
 	// actually the intended behavior for the ADMIN/USER side of this.
-	DeletePatient(ctx context.Context, arg DeletePatientParams) error
+	DeletePatient(ctx context.Context, arg DeletePatientParams) (int64, error)
 	DeletePendingAuthChallenge(ctx context.Context, id uuid.UUID) error
 	DeletePendingAuthChallengesByUser(ctx context.Context, arg DeletePendingAuthChallengesByUserParams) error
 	DeleteRole(ctx context.Context, id string) error
@@ -424,16 +428,12 @@ type Querier interface {
 	GetUsersByRole(ctx context.Context, arg GetUsersByRoleParams) ([]*GetUsersByRoleRow, error)
 	GetUsersByRoleCount(ctx context.Context, role string) (int64, error)
 	GetUsersCount(ctx context.Context) (int64, error)
-	// Always returns exactly 7 rows (day_offset 0 = Monday ... 6 = Sunday) for
-	// the week starting at @week_start, bucketed in the clinic timezone @tz
-	// (e.g. 'America/Toronto').
-	//
-	// assigned  : assignments whose parent examination is DUE that day.
-	// completed : of those, how many the patient has finished (completed_at set),
-	//             so the per-day ratio can never exceed 100%.
-	//
-	// The range predicate on e.due_at uses idx_examinations_due_at; the
-	// date bucketing happens only on the (small) matching set.
+	// Exactly 7 rows (day_offset 0 = Monday ... 6 = Sunday) for the local week
+	// starting at @week_start, bucketed in clinic timezone @tz.
+	//   assigned  : assignments created that day (by examination creation).
+	//   completed : assignments completed that day (by completed_at).
+	// Different populations per day, so completed can exceed assigned on a given
+	// day (finishing older work); the UI should clamp the ratio.
 	GetWeeklyCompletion(ctx context.Context, arg GetWeeklyCompletionParams) ([]*GetWeeklyCompletionRow, error)
 	IncrementAssignmentDuration(ctx context.Context, arg IncrementAssignmentDurationParams) (*AssignmentResult, error)
 	IncrementAssignmentPage(ctx context.Context, arg IncrementAssignmentPageParams) (*Assignment, error)
@@ -493,6 +493,8 @@ type Querier interface {
 	//   remote_token      BYTEA  – the single active token_encrypted (or NULL)
 	//   patient_name, patient_mrn
 	//
+	// CROSS JOIN (not LEFT) so sqlc keeps these columns non-null; an aggregate
+	// without GROUP BY always yields exactly one row.
 	ListExaminations(ctx context.Context, arg ListExaminationsParams) ([]*ListExaminationsRow, error)
 	// Scheduled job: not-yet-completed examinations due on or before
 	// due_before, whose most recent reminder (if any) is older than
@@ -504,9 +506,9 @@ type Querier interface {
 	// category_title + parent_scale_id + id — display_order already
 	// reflects the intended render sequence.
 	ListMMPIScalesForResult(ctx context.Context, arg ListMMPIScalesForResultParams) ([]*AssignmentMmpiScale, error)
-	// Main patient directory. Alphabetical by name; swap to
-	// last_activity_at DESC if the roster should read more like a worklist
-	// than a directory — a judgment call, easy to flip either way.
+	// Directory + search in one query. search NULL/'' = plain directory.
+	// Match: substring (ILIKE) OR fuzzy (trigram %), same as SearchPatients2's fuzzy path.
+	// Order: prefix > substring > fuzzy-only, then similarity (your old rank), then name, then id.
 	ListPatients(ctx context.Context, arg ListPatientsParams) ([]*Patient, error)
 	// e.g. everything currently READY_FOR_REVIEW, for a "needs your
 	// attention" view.
@@ -564,6 +566,7 @@ type Querier interface {
 	MarkExaminationCompleted(ctx context.Context, arg MarkExaminationCompletedParams) (*Examination, error)
 	MarkExaminationReviewed(ctx context.Context, arg MarkExaminationReviewedParams) (*Examination, error)
 	MarkPasswordResetUsed(ctx context.Context, token string) error
+	PickPatientSearch(ctx context.Context, arg PickPatientSearchParams) ([]*PickPatientSearchRow, error)
 	PromoteChallengeToRegistration(ctx context.Context, arg PromoteChallengeToRegistrationParams) (*PendingAuthChallenge, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	// Called after re-importing an instrument's JSON file (content changed,
@@ -588,6 +591,7 @@ type Querier interface {
 	// for "type in the chart number" lookups.
 	// Supports pagination via page (1-based) and limit (items per page).
 	SearchPatients(ctx context.Context, arg SearchPatientsParams) ([]*Patient, error)
+	SearchPatients2(ctx context.Context, arg SearchPatients2Params) ([]*SearchPatients2Row, error)
 	SearchUsers(ctx context.Context, arg SearchUsersParams) ([]*SearchUsersRow, error)
 	// remote_access_tokens.sql
 	//

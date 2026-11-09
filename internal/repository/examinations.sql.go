@@ -107,6 +107,64 @@ func (q *Queries) CountExaminationsByStatus(ctx context.Context, viewerID *uuid.
 	return items, nil
 }
 
+const countExaminationsFiltered = `-- name: CountExaminationsFiltered :one
+SELECT COUNT(*)
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE
+    ($1::uuid IS NULL OR e.patient_id = $1)
+    AND (
+        $2::uuid IS NULL
+        OR (e.is_developer_data OR p.is_developer_data)
+            = (SELECT is_developer_user($2::uuid))
+    )
+    AND (
+        $3::bool IS TRUE
+        OR $4::bool IS TRUE
+        OR $5::text IS NULL
+        OR e.status = $5::examination_status
+    )
+    AND (
+        $6::text IS NULL
+        OR e.mode = $6::assignment_mode
+    )
+    AND (
+        $3::bool IS NOT TRUE
+        OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
+    )
+    AND (
+        $4::bool IS NOT TRUE
+        OR EXISTS (
+            SELECT 1 FROM assignments a
+            WHERE a.examination_id = e.id AND a.status = 'READY_FOR_REVIEW'
+        )
+    )
+`
+
+type CountExaminationsFilteredParams struct {
+	PatientID          *uuid.UUID `json:"patient_id"`
+	ViewerID           *uuid.UUID `json:"viewer_id"`
+	OnlyOverdue        *bool      `json:"only_overdue"`
+	OnlyAwaitingReview *bool      `json:"only_awaiting_review"`
+	Status             *string    `json:"status"`
+	Mode               *string    `json:"mode"`
+}
+
+// KEEP THE WHERE CLAUSE IDENTICAL TO ListExaminations.
+func (q *Queries) CountExaminationsFiltered(ctx context.Context, arg CountExaminationsFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countExaminationsFiltered,
+		arg.PatientID,
+		arg.ViewerID,
+		arg.OnlyOverdue,
+		arg.OnlyAwaitingReview,
+		arg.Status,
+		arg.Mode,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOverdueExaminations = `-- name: CountOverdueExaminations :one
 SELECT COUNT(*) AS count
 FROM examinations e
@@ -548,83 +606,76 @@ func (q *Queries) GetNextAssignment(ctx context.Context, arg GetNextAssignmentPa
 
 const listExaminations = `-- name: ListExaminations :many
 SELECT
-        e.id, e.patient_id, e.mode, e.status, e.assigned_by, e.due_at, e.started_at, e.completed_at, e.reviewed_at, e.reviewed_by, e.is_developer_data, e.created_at, e.updated_at,
-        p.full_name AS patient_name,
-        p.mrn       AS patient_mrn,
-        -- Chips for the UI: one entry per assignment, ordered by sequence
-        (
-            SELECT COALESCE(
-                jsonb_agg(
-                    jsonb_build_object(
-                        'test_code', a.test_code,
-                        'completed', (a.status = 'READY_FOR_REVIEW' OR a.status = 'COMPLETED')
-                    )
-                    ORDER BY a.sequence
-                ),
-                '[]'::jsonb
-            )
-            FROM assignments a
-            WHERE a.examination_id = e.id
+    e.id, e.patient_id, e.mode, e.status, e.assigned_by, e.due_at, e.started_at, e.completed_at, e.reviewed_at, e.reviewed_by, e.is_developer_data, e.created_at, e.updated_at,
+    p.full_name AS patient_name,
+    p.mrn       AS patient_mrn,
+    ag.assignment_chips,
+    ag.tests_total,
+    ag.tests_completed,
+    (
+        SELECT rat.token_encrypted
+        FROM remote_access_tokens rat
+        WHERE rat.examination_id = e.id
+          AND rat.used_at IS NULL
+          AND NOT rat.revoked
+        LIMIT 1
+    ) AS remote_token
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+CROSS JOIN LATERAL (
+    SELECT
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'test_code', a.test_code,
+                    'completed', a.status IN ('READY_FOR_REVIEW', 'COMPLETED')
+                ) ORDER BY a.sequence
+            ),
+            '[]'::jsonb
         ) AS assignment_chips,
-        (SELECT COUNT(*) FROM assignments a WHERE a.examination_id = e.id)
-            AS tests_total,
-        (SELECT COUNT(*) FROM assignments a
-         WHERE a.examination_id = e.id AND a.status = 'COMPLETED')
-            AS tests_completed,
-        -- The one active remote token (partial unique index guarantees ≤ 1)
-        -- active token only
-        (
-            SELECT token_encrypted
-            FROM remote_access_tokens rat
-            WHERE rat.examination_id = e.id
-              AND rat.used_at IS NULL
-              AND NOT rat.revoked
-            LIMIT 1
-        ) AS remote_token
-    FROM examinations e
-    JOIN patients p ON p.id = e.patient_id
-    WHERE
-        ($1::uuid IS NULL OR e.patient_id = $1)
-        AND (
-            $2::uuid IS NULL
-            OR (e.is_developer_data OR p.is_developer_data)
-                = is_developer_user($2::uuid)
+        COUNT(*)                                       AS tests_total,
+        COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS tests_completed
+    FROM assignments a
+    WHERE a.examination_id = e.id
+) ag
+WHERE
+    ($1::uuid IS NULL OR e.patient_id = $1)
+    AND (
+        $2::uuid IS NULL
+        OR (e.is_developer_data OR p.is_developer_data)
+            = (SELECT is_developer_user($2::uuid))
+    )
+    AND (
+        $3::bool IS TRUE
+        OR $4::bool IS TRUE
+        OR $5::text IS NULL
+        OR e.status = $5::examination_status
+    )
+    AND (
+        $6::text IS NULL
+        OR e.mode = $6::assignment_mode
+    )
+    AND (
+        $3::bool IS NOT TRUE
+        OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
+    )
+    AND (
+        $4::bool IS NOT TRUE
+        OR EXISTS (
+            SELECT 1 FROM assignments a
+            WHERE a.examination_id = e.id AND a.status = 'READY_FOR_REVIEW'
         )
-        -- status filter (ignored when special flags are set)
-        AND (
-            $3::bool IS TRUE
-            OR $4::bool IS TRUE
-            OR $5::text IS NULL
-            OR e.status = $5::examination_status
-        )
-        -- mode filter
-        AND (
-            $6::text IS NULL
-            OR e.mode = $6::assignment_mode
-        )
-        -- overdue filter
-        AND (
-            $3::bool IS NOT TRUE
-            OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
-        )
-        -- awaiting-review = any child assignment is READY_FOR_REVIEW
-        AND (
-            $4::bool IS NOT TRUE
-            OR EXISTS (
-                SELECT 1 FROM assignments a
-                WHERE a.examination_id = e.id
-                  AND a.status = 'READY_FOR_REVIEW'
-            )
-        )
-    ORDER BY
-        CASE
-            WHEN $3::bool IS TRUE THEN e.due_at
-            WHEN $4::bool IS TRUE THEN e.completed_at
-            ELSE NULL
-        END ASC NULLS LAST,
-        e.created_at DESC
-    LIMIT $8
-    OFFSET $7
+    )
+ORDER BY
+    CASE
+        WHEN $3::bool IS TRUE THEN e.due_at
+        WHEN $4::bool IS TRUE THEN e.completed_at
+        ELSE NULL
+    END ASC NULLS LAST,
+    e.created_at DESC,
+    e.id DESC            -- tiebreaker: stable pages
+LIMIT $8
+OFFSET $7
 `
 
 type ListExaminationsParams struct {
@@ -687,6 +738,9 @@ type ListExaminationsRow struct {
 //	tests_completed   INT
 //	remote_token      BYTEA  – the single active token_encrypted (or NULL)
 //	patient_name, patient_mrn
+//
+// CROSS JOIN (not LEFT) so sqlc keeps these columns non-null; an aggregate
+// without GROUP BY always yields exactly one row.
 func (q *Queries) ListExaminations(ctx context.Context, arg ListExaminationsParams) ([]*ListExaminationsRow, error) {
 	rows, err := q.db.Query(ctx, listExaminations,
 		arg.PatientID,

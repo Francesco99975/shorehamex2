@@ -135,20 +135,18 @@ func GenerateUniqueID() uint {
 	return uint(binary.BigEndian.Uint64(hash[:8]))
 }
 
-const charset = "abcdefghkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ123456789%$#@"
+const tokenCharset = "abcdefghkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ123456789" // 54 chars
 
 func GenerateBase62Token(length int) (string, error) {
 	token := make([]byte, length)
-	max := big.NewInt(int64(len(charset)))
-
-	for i := range length {
+	max := big.NewInt(int64(len(tokenCharset)))
+	for i := range token {
 		n, err := rand.Int(rand.Reader, max)
 		if err != nil {
 			return "", err
 		}
-		token[i] = charset[n.Int64()]
+		token[i] = tokenCharset[n.Int64()]
 	}
-
 	return string(token), nil
 }
 

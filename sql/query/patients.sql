@@ -48,17 +48,65 @@ WHERE mrn = $1
   );
 
 -- name: ListPatients :many
--- Main patient directory. Alphabetical by name; swap to
--- last_activity_at DESC if the roster should read more like a worklist
--- than a directory — a judgment call, easy to flip either way.
-SELECT * FROM patients
-WHERE is_active
-  AND (
-      sqlc.narg(viewer_id)::uuid IS NULL
-      OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
-  )
-ORDER BY full_name
+-- Directory + search in one query. search NULL/'' = plain directory.
+-- Match: substring (ILIKE) OR fuzzy (trigram %), same as SearchPatients2's fuzzy path.
+-- Order: prefix > substring > fuzzy-only, then similarity (your old rank), then name, then id.
+WITH q AS (
+    SELECT
+        NULLIF(sqlc.narg(search)::text, '') AS raw,
+        replace(replace(replace(NULLIF(sqlc.narg(search)::text, ''),
+          '\', '\\'), '%', '\%'), '_', '\_') AS esc
+)
+SELECT p.*
+FROM patients p
+CROSS JOIN q
+WHERE p.is_active
+AND (
+    sqlc.narg(viewer_id)::uuid IS NULL
+    OR p.is_developer_data = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
+)
+AND (
+    q.raw IS NULL
+    OR p.full_name ILIKE '%' || q.esc || '%'
+    OR p.mrn       ILIKE '%' || q.esc || '%'
+    OR p.full_name % q.raw
+    OR p.mrn       % q.raw
+)
+ORDER BY
+    CASE
+        WHEN q.raw IS NULL THEN 0
+        WHEN p.full_name ILIKE q.esc || '%' OR p.mrn ILIKE q.esc || '%' THEN 0
+        WHEN p.full_name ILIKE '%' || q.esc || '%' OR p.mrn ILIKE '%' || q.esc || '%' THEN 1
+        ELSE 2
+    END,
+    GREATEST(similarity(p.full_name, q.raw), similarity(p.mrn, q.raw)) DESC NULLS LAST,
+    p.full_name,
+    p.id
 LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
+
+-- name: CountPatientsFiltered :one
+-- KEEP THE CTE AND WHERE IDENTICAL TO ListPatients.
+WITH q AS (
+    SELECT
+        NULLIF(sqlc.narg(search)::text, '') AS raw,
+        replace(replace(replace(NULLIF(sqlc.narg(search)::text, ''),
+            '\', '\\'), '%', '\%'), '_', '\_') AS esc
+)
+SELECT COUNT(*)
+FROM patients p
+CROSS JOIN q
+WHERE p.is_active
+AND (
+    sqlc.narg(viewer_id)::uuid IS NULL
+    OR p.is_developer_data = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
+)
+AND (
+    q.raw IS NULL
+    OR p.full_name ILIKE '%' || q.esc || '%'
+    OR p.mrn       ILIKE '%' || q.esc || '%'
+    OR p.full_name % q.raw
+    OR p.mrn       % q.raw
+);
 
 -- name: ListPatientsByStatus :many
 -- e.g. everything currently READY_FOR_REVIEW, for a "needs your
@@ -86,6 +134,59 @@ AND (
 )
 AND (full_name ILIKE '%' || sqlc.arg(query) || '%' OR mrn ILIKE '%' || sqlc.arg(query) || '%')
 ORDER BY full_name
+LIMIT sqlc.arg(row_limit)
+OFFSET (sqlc.arg(page) - 1) * sqlc.arg(row_limit);
+
+-- name: SearchPatients2 :many
+WITH search_input AS (
+    SELECT
+        sqlc.arg(query)::text AS raw
+)
+SELECT
+    *,
+    GREATEST(
+        similarity(full_name, raw),
+        similarity(mrn, raw)
+    ) AS rank
+FROM patients, search_input
+WHERE
+    is_active
+    AND (
+        sqlc.narg(viewer_id)::uuid IS NULL
+        OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+    )
+    AND
+    (
+        sqlc.arg(query) = ''
+        OR full_name % raw
+        OR mrn % raw
+    )
+ORDER BY rank DESC
+LIMIT sqlc.arg(row_limit)
+OFFSET (sqlc.arg(page) - 1) * sqlc.arg(row_limit);
+
+-- name: PickPatientSearch :many
+WITH search_input AS (
+    SELECT sqlc.arg(query)::text AS raw
+)
+SELECT
+    *,
+    GREATEST(
+        similarity(full_name, raw),
+        similarity(mrn, raw)
+    ) AS rank
+FROM patients, search_input
+WHERE
+    is_active
+    AND (
+        sqlc.narg(viewer_id)::uuid IS NULL
+        OR is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+    )
+    AND (
+        full_name % raw
+        OR mrn % raw
+    )
+ORDER BY rank DESC
 LIMIT sqlc.arg(row_limit)
 OFFSET (sqlc.arg(page) - 1) * sqlc.arg(row_limit);
 
@@ -139,7 +240,7 @@ WHERE id = $1
   )
 RETURNING *;
 
--- name: DeletePatient :exec
+-- name: DeletePatient :execrows
 -- Hard delete. Scoped only by the same partition rule as every other
 -- query here — NOT restricted to developer-owned rows. An ADMIN/USER
 -- can hard-delete a real patient; a developer can hard-delete a

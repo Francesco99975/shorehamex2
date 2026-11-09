@@ -411,10 +411,12 @@ templ Search(p SearchProps) {
 						type="search"
 						id={ nonEmpty(p.Name, "q") }
 						name={ nonEmpty(p.Name, "q") }
+						value={ p.Value }
 						placeholder={ nonEmpty(p.Placeholder, "Search…") }
 						class="field pl-9"
 						hx-get={ p.GetURL }
-						hx-trigger={ "keyup changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
+						hx-trigger={ "input changed delay:" + itoa(nonZero(p.DebounceMS, 300)) + "ms" }
+						hx-sync="this:replace"
 						hx-target={ "#" + p.TargetID }
 						hx-swap="innerHTML"
 						if p.PushURL {

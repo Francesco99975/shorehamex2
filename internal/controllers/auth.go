@@ -290,6 +290,7 @@ func SessionLogin() echo.HandlerFunc {
 
 		user, err := repo.GetUserByEmailOrUsername(ctx, payload.EmailOrUsername)
 		if err != nil {
+			slog.Debug("User not found", slog.Any("error", err))
 			return herr.Handle(c.Response(), http.StatusNotFound, err)
 		}
 

@@ -128,6 +128,40 @@ WHERE e.id = $1
         OR (e.is_developer_data OR p.is_developer_data) = is_developer_user(sqlc.narg(viewer_id)::uuid)
     );
 
+-- name: CountExaminationsFiltered :one
+-- KEEP THE WHERE CLAUSE IDENTICAL TO ListExaminations.
+SELECT COUNT(*)
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+WHERE
+    (sqlc.narg(patient_id)::uuid IS NULL OR e.patient_id = sqlc.narg(patient_id))
+    AND (
+        sqlc.narg(viewer_id)::uuid IS NULL
+        OR (e.is_developer_data OR p.is_developer_data)
+            = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
+    )
+    AND (
+        sqlc.narg(only_overdue)::bool IS TRUE
+        OR sqlc.narg(only_awaiting_review)::bool IS TRUE
+        OR sqlc.narg(status)::text IS NULL
+        OR e.status = sqlc.narg(status)::examination_status
+    )
+    AND (
+        sqlc.narg(mode)::text IS NULL
+        OR e.mode = sqlc.narg(mode)::assignment_mode
+    )
+    AND (
+        sqlc.narg(only_overdue)::bool IS NOT TRUE
+        OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
+    )
+    AND (
+        sqlc.narg(only_awaiting_review)::bool IS NOT TRUE
+        OR EXISTS (
+            SELECT 1 FROM assignments a
+            WHERE a.examination_id = e.id AND a.status = 'READY_FOR_REVIEW'
+        )
+    );
+
 -- name: ListExaminations :many
 -- Unified list for the Examinations page, dashboard "needs attention",
 -- and patient-detail examination history.
@@ -155,83 +189,78 @@ WHERE e.id = $1
 --   patient_name, patient_mrn
 --
 SELECT
-        e.*,
-        p.full_name AS patient_name,
-        p.mrn       AS patient_mrn,
-        -- Chips for the UI: one entry per assignment, ordered by sequence
-        (
-            SELECT COALESCE(
-                jsonb_agg(
-                    jsonb_build_object(
-                        'test_code', a.test_code,
-                        'completed', (a.status = 'READY_FOR_REVIEW' OR a.status = 'COMPLETED')
-                    )
-                    ORDER BY a.sequence
-                ),
-                '[]'::jsonb
-            )
-            FROM assignments a
-            WHERE a.examination_id = e.id
+    e.*,
+    p.full_name AS patient_name,
+    p.mrn       AS patient_mrn,
+    ag.assignment_chips,
+    ag.tests_total,
+    ag.tests_completed,
+    (
+        SELECT rat.token_encrypted
+        FROM remote_access_tokens rat
+        WHERE rat.examination_id = e.id
+          AND rat.used_at IS NULL
+          AND NOT rat.revoked
+        LIMIT 1
+    ) AS remote_token
+FROM examinations e
+JOIN patients p ON p.id = e.patient_id
+-- CROSS JOIN (not LEFT) so sqlc keeps these columns non-null; an aggregate
+-- without GROUP BY always yields exactly one row.
+CROSS JOIN LATERAL (
+    SELECT
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'test_code', a.test_code,
+                    'completed', a.status IN ('READY_FOR_REVIEW', 'COMPLETED')
+                ) ORDER BY a.sequence
+            ),
+            '[]'::jsonb
         ) AS assignment_chips,
-        (SELECT COUNT(*) FROM assignments a WHERE a.examination_id = e.id)
-            AS tests_total,
-        (SELECT COUNT(*) FROM assignments a
-         WHERE a.examination_id = e.id AND a.status = 'COMPLETED')
-            AS tests_completed,
-        -- The one active remote token (partial unique index guarantees ≤ 1)
-        -- active token only
-        (
-            SELECT token_encrypted
-            FROM remote_access_tokens rat
-            WHERE rat.examination_id = e.id
-              AND rat.used_at IS NULL
-              AND NOT rat.revoked
-            LIMIT 1
-        ) AS remote_token
-    FROM examinations e
-    JOIN patients p ON p.id = e.patient_id
-    WHERE
-        (sqlc.narg(patient_id)::uuid IS NULL OR e.patient_id = sqlc.narg(patient_id))
-        AND (
-            sqlc.narg(viewer_id)::uuid IS NULL
-            OR (e.is_developer_data OR p.is_developer_data)
-                = is_developer_user(sqlc.narg(viewer_id)::uuid)
+        COUNT(*)                                       AS tests_total,
+        COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS tests_completed
+    FROM assignments a
+    WHERE a.examination_id = e.id
+) ag
+WHERE
+    (sqlc.narg(patient_id)::uuid IS NULL OR e.patient_id = sqlc.narg(patient_id))
+    AND (
+        sqlc.narg(viewer_id)::uuid IS NULL
+        OR (e.is_developer_data OR p.is_developer_data)
+            = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
+    )
+    AND (
+        sqlc.narg(only_overdue)::bool IS TRUE
+        OR sqlc.narg(only_awaiting_review)::bool IS TRUE
+        OR sqlc.narg(status)::text IS NULL
+        OR e.status = sqlc.narg(status)::examination_status
+    )
+    AND (
+        sqlc.narg(mode)::text IS NULL
+        OR e.mode = sqlc.narg(mode)::assignment_mode
+    )
+    AND (
+        sqlc.narg(only_overdue)::bool IS NOT TRUE
+        OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
+    )
+    AND (
+        sqlc.narg(only_awaiting_review)::bool IS NOT TRUE
+        OR EXISTS (
+            SELECT 1 FROM assignments a
+            WHERE a.examination_id = e.id AND a.status = 'READY_FOR_REVIEW'
         )
-        -- status filter (ignored when special flags are set)
-        AND (
-            sqlc.narg(only_overdue)::bool IS TRUE
-            OR sqlc.narg(only_awaiting_review)::bool IS TRUE
-            OR sqlc.narg(status)::text IS NULL
-            OR e.status = sqlc.narg(status)::examination_status
-        )
-        -- mode filter
-        AND (
-            sqlc.narg(mode)::text IS NULL
-            OR e.mode = sqlc.narg(mode)::assignment_mode
-        )
-        -- overdue filter
-        AND (
-            sqlc.narg(only_overdue)::bool IS NOT TRUE
-            OR (e.status <> 'COMPLETED' AND e.due_at < NOW())
-        )
-        -- awaiting-review = any child assignment is READY_FOR_REVIEW
-        AND (
-            sqlc.narg(only_awaiting_review)::bool IS NOT TRUE
-            OR EXISTS (
-                SELECT 1 FROM assignments a
-                WHERE a.examination_id = e.id
-                  AND a.status = 'READY_FOR_REVIEW'
-            )
-        )
-    ORDER BY
-        CASE
-            WHEN sqlc.narg(only_overdue)::bool IS TRUE THEN e.due_at
-            WHEN sqlc.narg(only_awaiting_review)::bool IS TRUE THEN e.completed_at
-            ELSE NULL
-        END ASC NULLS LAST,
-        e.created_at DESC
-    LIMIT sqlc.arg(row_limit)
-    OFFSET sqlc.arg(row_offset);
+    )
+ORDER BY
+    CASE
+        WHEN sqlc.narg(only_overdue)::bool IS TRUE THEN e.due_at
+        WHEN sqlc.narg(only_awaiting_review)::bool IS TRUE THEN e.completed_at
+        ELSE NULL
+    END ASC NULLS LAST,
+    e.created_at DESC,
+    e.id DESC            -- tiebreaker: stable pages
+LIMIT sqlc.arg(row_limit)
+OFFSET sqlc.arg(row_offset);
 
 
 -- name: GetAssignmentInExamination :one

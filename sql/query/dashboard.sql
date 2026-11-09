@@ -206,44 +206,53 @@ LIMIT sqlc.arg(row_limit)::int;
 
 
 -- name: GetWeeklyCompletion :many
--- Always returns exactly 7 rows (day_offset 0 = Monday ... 6 = Sunday) for
--- the week starting at @week_start, bucketed in the clinic timezone @tz
--- (e.g. 'America/Toronto').
---
--- assigned  : assignments whose parent examination is DUE that day.
--- completed : of those, how many the patient has finished (completed_at set),
---             so the per-day ratio can never exceed 100%.
---
--- The range predicate on e.due_at uses idx_examinations_due_at; the
--- date bucketing happens only on the (small) matching set.
-WITH days AS (
+-- Exactly 7 rows (day_offset 0 = Monday ... 6 = Sunday) for the local week
+-- starting at @week_start, bucketed in clinic timezone @tz.
+--   assigned  : assignments created that day (by examination creation).
+--   completed : assignments completed that day (by completed_at).
+-- Different populations per day, so completed can exceed assigned on a given
+-- day (finishing older work); the UI should clamp the ratio.
+WITH w AS (
+    SELECT
+        sqlc.arg(week_start)::timestamptz AS lo,
+        -- add 7 days on the LOCAL wall clock so DST weeks (167h/169h) stay correct
+        ((sqlc.arg(week_start)::timestamptz AT TIME ZONE sqlc.arg(tz)::text)
+            + INTERVAL '7 days') AT TIME ZONE sqlc.arg(tz)::text AS hi,
+        (sqlc.arg(week_start)::timestamptz AT TIME ZONE sqlc.arg(tz)::text)::date AS start_date
+),
+days AS (
     SELECT generate_series(0, 6)::int AS day_offset
 ),
-due AS (
-    SELECT
-        (
-            (e.due_at AT TIME ZONE sqlc.arg(tz)::text)::date
-          - (sqlc.arg(week_start)::timestamptz AT TIME ZONE sqlc.arg(tz)::text)::date
-        )::int          AS day_offset,
-        a.completed_at
+created AS (
+    SELECT ((e.created_at AT TIME ZONE sqlc.arg(tz)::text)::date - w.start_date)::int AS day_offset
     FROM examinations e
     JOIN assignments a ON a.examination_id = e.id
-    WHERE e.due_at >= sqlc.arg(week_start)::timestamptz
-      AND e.due_at <  sqlc.arg(week_start)::timestamptz + INTERVAL '7 days'
+    CROSS JOIN w
+    WHERE e.created_at >= w.lo
+      AND e.created_at <  w.hi
       AND (
           sqlc.narg(viewer_id)::uuid IS NULL
-          OR e.is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+          OR e.is_developer_data = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
+      )
+),
+finished AS (
+    SELECT ((a.completed_at AT TIME ZONE sqlc.arg(tz)::text)::date - w.start_date)::int AS day_offset
+    FROM assignments a
+    JOIN examinations e ON e.id = a.examination_id
+    CROSS JOIN w
+    WHERE a.completed_at >= w.lo
+      AND a.completed_at <  w.hi
+      AND (
+          sqlc.narg(viewer_id)::uuid IS NULL
+          OR e.is_developer_data = (SELECT is_developer_user(sqlc.narg(viewer_id)::uuid))
       )
 )
 SELECT
     d.day_offset,
-    COUNT(due.day_offset)::int   AS assigned,
-    COUNT(due.completed_at)::int AS completed
+    (SELECT COUNT(*) FROM created  c WHERE c.day_offset = d.day_offset)::int AS assigned,
+    (SELECT COUNT(*) FROM finished f WHERE f.day_offset = d.day_offset)::int AS completed
 FROM days d
-LEFT JOIN due ON due.day_offset = d.day_offset
-GROUP BY d.day_offset
 ORDER BY d.day_offset;
-
 
 -- -----------------------------------------------------------------------------
 -- Optional supporting indexes (add in a new migration if the tables grow):

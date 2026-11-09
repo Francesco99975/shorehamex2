@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/Francesco99975/shorehamex2/views/icons"
 	"strings"
+	"cmp"
 )
 
 // NavLink is one entry in the navigation. Active state is computed client-side
@@ -29,6 +30,16 @@ var AdminNavLinks = []NavLink{
 	{Label: "Security", Href: "/settings/security", Icon: icons.Lock("w-5 h-5")},
 	{Label: "Account", Href: "/settings/account", Icon: icons.Info("w-5 h-5")},
 	{Label: "Users", Href: "/settings/users", Icon: icons.UsersIcon("w-5 h-5")},
+}
+
+var UserNavLinks = []NavLink{
+	{Label: "Dashboard", Href: "/dashboard", Icon: icons.Desktop("w-5 h-5")},
+	{Label: "Patients", Href: "/patients", Icon: icons.UsersIcon("w-5 h-5")},
+	{Label: "Examinations", Href: "/examinations", Icon: icons.CheckIcon("w-5 h-5")},
+	{Label: "Test Catalog", Href: "/tests", Icon: icons.Database("w-5 h-5")},
+	{Label: "Profile", Href: "/settings/profile", Icon: icons.Home("w-5 h-5")},
+	{Label: "Security", Href: "/settings/security", Icon: icons.Lock("w-5 h-5")},
+	{Label: "Account", Href: "/settings/account", Icon: icons.Info("w-5 h-5")},
 }
 
 // activeExpr returns an Alpine boolean expression true when the inherited
@@ -271,6 +282,22 @@ type PaginationProps struct {
 	PushURL    bool
 	Window     int
 	Attrs      templ.Attributes
+	Href func(page int) string
+}
+
+func (p PaginationProps) pageHref(page int) string {
+	if p.Href != nil {
+		return p.Href(page)
+	}
+	param := p.Param
+	if param == "" {
+		param = "page"
+	}
+	sep := "?"
+	if strings.Contains(p.URL, "?") {
+		sep = "&"
+	}
+	return p.URL + sep + param + "=" + itoa(page)
 }
 
 // Pagination is a compact, HTMX-driven server pager with sliding window and
@@ -312,57 +339,25 @@ templ Pagination(p PaginationProps) {
 // real <a href> navigation (progressive enhancement), matching the behaviour
 // we added to the cyberpunk version.
 templ paginationBtn(p PaginationProps, target int, disabled bool, label, aria, sizing string) {
-	{{param := p.Param
-if param == "" {
-	param = "page"
-}
-	}}
-	{{swap := p.Swap
-if swap == "" {
-	swap = "innerHTML"
-}
-	}}
-	{{ asLink := p.Swap == "" && p.Target == "" }}
-	{{sep := "?"
-if strings.Contains(p.URL, "?") {
-	sep = "&"
-}
-	}}
 	if disabled {
 		<span
 			class={ "rounded-lg border border-border text-muted opacity-40 cursor-not-allowed flex items-center justify-center", sizing }
 			aria-disabled="true"
 			aria-label={ aria }
 		>{ label }</span>
-	} else if asLink {
+	} else {
+		{{ href := p.pageHref(target) }}
 		<a
-			href={ templ.SafeURL(p.URL + sep + param + "=" + itoa(target)) }
+			href={ templ.SafeURL(href) }
 			class={ "rounded-lg border border-border text-foreground hover:bg-muted/40 hover:border-primary/40 transition-colors", sizing }
 			aria-label={ aria }
-			if p.Include != "" {
-				x-on:click={ "const u = new URL($el.href, location.origin); " +
-					"document.querySelectorAll('" + p.Include + "').forEach(el => { if(el.name) u.searchParams.set(el.name, el.value); }); " +
-					"$el.href = u.pathname + u.search;" }
+			if p.Target != "" {
+				hx-get={ href }
+				hx-target={ "#" + p.Target }
+				hx-swap={ cmp.Or(p.Swap, "innerHTML") }
 			}
 			{ p.Attrs... }
 		>{ label }</a>
-	} else {
-		<button
-			type="button"
-			class={ "rounded-lg border border-border text-foreground hover:bg-muted/40 hover:border-primary/40 transition-colors", sizing }
-			aria-label={ aria }
-			hx-get={ p.URL }
-			hx-target={ "#" + p.Target }
-			hx-swap={ swap }
-			hx-vals={ `{"` + param + `": ` + itoa(target) + `}` }
-			if p.Include != "" {
-				hx-include={ p.Include }
-			}
-			if p.PushURL {
-				hx-push-url
-			}
-			{ p.Attrs... }
-		>{ label }</button>
 	}
 }
 

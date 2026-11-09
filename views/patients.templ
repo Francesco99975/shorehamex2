@@ -1,7 +1,6 @@
 package views
 
 import (
-	"github.com/Francesco99975/shorehamex2/cmd/boot"
 	"github.com/Francesco99975/shorehamex2/internal/config"
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/views/components"
@@ -10,20 +9,33 @@ import (
 	"strconv"
 )
 
-templ Patients(site config.Site, patients []components.PatientItemProps, total int) {
+type PatientsViewData struct {
+	Items   []components.PatientItemProps
+	Total   int
+	Page    int
+	PerPage int
+	Query   string
+	Href    func(page int) string
+}
+
+func (v PatientsViewData) totalPages() int {
+	return max(1, (v.Total+v.PerPage-1)/v.PerPage)
+}
+
+templ Patients(site config.Site, vm PatientsViewData) {
 	@layouts.AuthenticatedLayout(site) {
 		<main class="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto" x-data="{ newPatient: false }">
 			<div class="space-y-4">
 				<div class="px-4 sm:px-6 py-4 border-b border-primary/10 flex flex-col sm:flex-row gap-3">
 					<div class="flex-1">
 						@ui.Search(ui.SearchProps{
-							Name:           "search_patients",
-							GetURL:         "patients/search",
-							TargetID:       "patients-list",
+							Name:           "q",
+							Value: 			vm.Query,
+							GetURL:         "/patients",
+							TargetID:       "patients-results",
 							DebounceMS:     300,
 							Placeholder:    "Search patients...",
 							ExternalTarget: true,
-							Include:        "[name='page']",
 						})
 					</div>
 					@ui.Button(ui.ButtonProps{
@@ -40,8 +52,7 @@ templ Patients(site config.Site, patients []components.PatientItemProps, total i
 					}) {
 						<form
 							hx-post="/patients"
-							hx-target="#patients-list"
-							hx-swap="afterbegin"
+							hx-swap="none"
 							{ ui.WithLoading("new-patient-indicator")... }
 							@htmx:after-request="if(event.detail.successful) newPatient = false"
 							class="p-6 space-y-6"
@@ -100,13 +111,27 @@ templ Patients(site config.Site, patients []components.PatientItemProps, total i
 						</form>
 					}
 				</div>
-				<div id="patients-list" class="space-y-3">
-					@PatientsList(patients, site.CSRF)
 				</div>
-				@PatientsPagination(total, 1, boot.Environment.PaginationWindow, false)
-			</div>
+				<div id="patients-results">
+					@PatientsResults(vm, site.CSRF)
+				</div>
 		</main>
 	}
+}
+
+templ PatientsResults(vm PatientsViewData, csrf string) {
+	<div
+		hidden
+		hx-get={ vm.Href(vm.Page) }
+		hx-trigger="patients-changed from:body"
+		hx-target="#patients-results"
+		hx-swap="innerHTML"
+	></div>
+	<div id="patients-list" class="space-y-3">
+		@PatientsList(vm.Items, csrf)
+	</div>
+	@components.EmptyState(len(vm.Items) == 0, false, "No patients found.")
+	@PatientsPagination(vm)
 }
 
 templ PatientsList(patients []components.PatientItemProps, csrf string) {
@@ -115,36 +140,26 @@ templ PatientsList(patients []components.PatientItemProps, csrf string) {
 	}
 }
 
-templ PatientsPagination(total int, page int, perPage int, oob bool) {
+templ PatientsPagination(vm PatientsViewData) {
 	<div
 		id="patients-pagination"
-		if oob {
-			hx-swap-oob="true"
-		}
 		class="px-4 sm:px-6 py-4 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-3"
 	>
-		<p class="text-sm text-primary/60">
-			Showing <span class="font-medium text-primary">{ strconv.Itoa((page-1)*perPage + 1) }-{ strconv.Itoa(min(page*perPage, total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(total) }</span>
-		</p>
-		<div class="flex items-center gap-1">
-			@ui.Pagination(ui.PaginationProps{
-				Current:    page,
-				TotalRows:  total,
-				TotalPages: (total + perPage - 1) / perPage,
-				Window:     perPage,
-				URL:        "patients/search",
-				Target:     "patients-list",
-				Swap:       "innerHTML",
-				Include:    "[name='search_patients']",
-				PushURL:    false,
-			})
-		</div>
+		if vm.Total > 0 {
+			<p class="text-sm text-primary/60">
+				Showing <span class="font-medium text-primary">{ strconv.Itoa((vm.Page-1)*vm.PerPage + 1) }-{ strconv.Itoa(min(vm.Page*vm.PerPage, vm.Total)) }</span> of <span class="font-medium text-primary">{ strconv.Itoa(vm.Total) }</span>
+			</p>
+			<div class="flex items-center gap-1">
+				@ui.Pagination(ui.PaginationProps{
+					Current:    vm.Page,
+					TotalRows:  vm.Total,
+					TotalPages: vm.totalPages(),
+					Window:     vm.PerPage,
+					Href:       vm.Href,
+					Target:     "patients-results",
+					Swap:       "innerHTML show:window:top",
+				})
+			</div>
+		}
 	</div>
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

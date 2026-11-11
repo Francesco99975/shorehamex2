@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: ["CI"]   # Must exactly match the name: CI from your CI file
     types:
-      - completed
+      - completed # completed
 
 jobs:
   build:

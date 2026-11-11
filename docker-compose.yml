@@ -1,10 +1,10 @@
 services:
-  shorehamex2db:
+  shorexdb:
     container_name: shorehamex2db
     image: postgres:15.3-alpine
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kalairen -d shorehamex2db"]
+      test: ["CMD-SHELL", "pg_isready -U kalairen -d shorexdb"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,11 +23,11 @@ services:
       - shorehamex2pgconf:/etc/postgresql
       - shorehamex2pglog:/var/log/postgresql
   shorehamex2:
-    container_name: shorehamex2
-    image: shorehamex2
+    container_name: shorexdb
+    image: shorexdb
     restart: unless-stopped
     depends_on:
-      shorehamex2db:
+      shorexdb:
         condition: service_healthy
     environment:
       - GO_ENV

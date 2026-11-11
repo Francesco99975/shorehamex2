@@ -1,7 +1,7 @@
 # -----------------------------
 # 1. Build Phase
 # -----------------------------
-FROM golang:1.26.1-alpine3.22 AS build
+FROM golang:1.26.8-alpine3.24 AS build
 
 # Install all tools needed for client + Go + templ
 RUN apk --no-cache add gcc g++ make git nodejs npm bash
@@ -41,7 +41,7 @@ RUN GOOS=linux go build -ldflags="-s -w" -o ./bin/shorehamex2 ./cmd/server/*.go
 # -----------------------------
 # Release Phase
 # -----------------------------
-FROM alpine:3.22 AS release
+FROM alpine:3.24 AS release
 
 RUN apk update && apk upgrade && apk --no-cache add ca-certificates
 

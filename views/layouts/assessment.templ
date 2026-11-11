@@ -1,0 +1,210 @@
+package layouts
+
+import (
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+// Collection notice required by PHIPA s.18 (knowledgeable consent): who is
+// collecting, why, and where the full written statement (s.16) lives.
+const (
+	noticeCollector   = "Casa Medica"
+	noticePurpose     = "to assess your health and provide your care, as permitted under Ontario’s Personal Health Information Protection Act, 2004 (PHIPA)"
+	noticePrivacyHref = "/privacy"
+	noticeTermsHref   = "/terms"
+
+	clinicianExitAction = "/clinic"
+)
+
+// ─── Clinical ────────────────────────────────────────────────────────────────
+
+// ClinicalAssessmentLayout hosts a test taken on a clinic device while a
+// clinician is signed in. The patient sees no app navigation; the clinician
+// leaves through a password-protected dialog, and the back button is pinned
+// to the current page.
+//
+// POST /clinic checks the password: on success respond with HX-Redirect,
+// on failure respond 200 with a short message (swapped into the error slot).
+//
+// This only hides navigation. The session is still the clinician's, so
+// middleware should also reject any clinician route other than the test
+// and POST /clinic while an assessment is active.
+templ ClinicalAssessmentLayout(site config.Site) {
+	@CoreHTML(site) {
+		<div
+			x-data="{ clinicianExit: false }"
+			x-init="history.pushState(null, '', location.href)"
+			@popstate.window="history.pushState(null, '', location.href)"
+			class="flex min-h-dvh flex-col bg-background text-fg"
+		>
+			<header class="border-b border-border bg-background">
+				<div class="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-3 px-4 sm:px-6">
+					<div class="flex min-w-0 items-center gap-2">
+						<span class="truncate text-base font-semibold">{ site.AppName }</span>
+						<span class="hidden shrink-0 rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-muted sm:inline">
+							In-clinic assessment
+						</span>
+					</div>
+					<button
+						type="button"
+						aria-haspopup="dialog"
+						@click="clinicianExit = true"
+						class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium text-muted transition-colors hover:border-primary/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+					>
+						@assessmentLockIcon("size-4")
+						<span>Clinician</span>
+					</button>
+				</div>
+			</header>
+			@assessmentNoticeBar()
+			<div class="flex-1">
+				{ children... }
+			</div>
+		</div>
+	}
+}
+
+templ clinicianExitModal(site config.Site) {
+	@ui.Modal(ui.ModalProps{
+		Title:    "Return to clinician view",
+		OpenExpr: "clinicianExit",
+		MaxW:     "380px",
+	}) {
+		<form
+			hx-post={ clinicianExitAction }
+			hx-target="#clinician-exit-error"
+			hx-swap="innerHTML"
+			{ ui.WithLoading("clinician-exit-loading")... }
+			@htmx:after-request="
+				if (event.target === $el) {
+					const pw = $el.querySelector('[name=password]');
+					pw.value = '';
+					pw.focus();
+				}
+			"
+			class="flex flex-col gap-5 p-4"
+		>
+			@components.CSRF(site.CSRF)
+			<p class="text-sm leading-relaxed text-muted text-pretty">
+				Enter the password for <span class="font-medium text-fg">{ site.CurrentUser.Username }</span> to leave this assessment. Answers on this page that haven&apos;t been submitted will be lost.
+			</p>
+			<div class="flex flex-col gap-2">
+				<label for="clinician-exit-password" class="text-sm font-medium">Password</label>
+				<input
+					id="clinician-exit-password"
+					name="password"
+					type="password"
+					autocomplete="current-password"
+					required
+					aria-describedby="clinician-exit-error"
+					class="h-11 w-full rounded-lg border border-border bg-background px-3 text-base text-fg focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+				/>
+				<p id="clinician-exit-error" role="alert" aria-live="assertive" class="min-h-5 text-sm text-danger"></p>
+			</div>
+			<div class="flex gap-2">
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonGhost,
+					Size:    ui.ButtonLG,
+					FullW:   true,
+					Attrs: templ.Attributes{
+						"@click": "$el.form.reset(); document.getElementById('clinician-exit-error').textContent = ''; clinicianExit = false",
+					},
+				}) {
+					Cancel
+				}
+				@ui.Button(ui.ButtonProps{
+					Variant: ui.ButtonPrimary,
+					Type:    ui.TypeSubmit,
+					Size:    ui.ButtonLG,
+					Loading: ui.LoadingConfig{IndicatorID: "clinician-exit-loading"},
+					FullW:   true,
+				}) {
+					Unlock and exit
+				}
+			</div>
+		</form>
+	}
+}
+
+// ─── Remote ──────────────────────────────────────────────────────────────────
+
+// RemoteAssessmentLayout hosts a test opened from a remote link. The patient
+// has no account and nobody is beside them, so there is no app navigation and
+// the footer points to help, including crisis lines.
+templ RemoteAssessmentLayout(site config.Site) {
+	@CoreHTML(site) {
+		<div class="flex min-h-dvh flex-col bg-background text-fg">
+			<header class="border-b border-border bg-background">
+				<div class="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-3 px-4 sm:px-6">
+					<span class="min-w-0 truncate text-base font-semibold">{ site.AppName }</span>
+					<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-muted">
+						@assessmentLockIcon("size-3.5")
+						Secure link
+					</span>
+				</div>
+			</header>
+			@assessmentNoticeBar()
+			<div class="flex-1">
+				{ children... }
+			</div>
+			@remoteHelpFooter()
+		</div>
+	}
+}
+
+templ remoteHelpFooter() {
+	<footer class="border-t border-border">
+		<div class="mx-auto flex w-full max-w-2xl flex-col gap-2 px-4 py-4 text-sm leading-relaxed text-muted text-pretty sm:px-6">
+			<p>
+				Questions about this assessment or how your information is handled? Contact { noticeCollector } directly, or read our
+				<a href={ templ.SafeURL(noticePrivacyHref) } target="_blank" rel="noopener" class={ noticeLink }>
+					privacy notice<span class="sr-only"> (opens in a new tab)</span>
+				</a>.
+			</p>
+			<p>
+				<span class="font-medium text-fg">Need help now?</span> If you are in crisis or thinking about suicide, call or text
+				<a href="tel:988" class={ noticeLink }>9-8-8</a>
+				any time. In an emergency, call
+				<a href="tel:911" class={ noticeLink }>911</a>.
+			</p>
+		</div>
+	</footer>
+}
+
+// ─── Shared ──────────────────────────────────────────────────────────────────
+
+// Links open in a new tab so following them never discards unsaved answers.
+templ assessmentNoticeBar() {
+	<aside aria-label="Privacy notice" class="border-b border-border bg-panel">
+		<div class="mx-auto flex w-full max-w-2xl items-start gap-3 px-4 py-3 sm:px-6">
+			@assessmentShieldIcon("mt-0.5 size-4 shrink-0 text-primary")
+			<p class="min-w-0 text-sm leading-relaxed text-muted text-pretty">
+				<span class="font-medium text-fg">{ noticeCollector }</span> is collecting your answers { noticePurpose }.
+				<span class="inline-flex flex-wrap gap-x-3">
+					<a href={ templ.SafeURL(noticePrivacyHref) } target="_blank" rel="noopener" class={ noticeLink }>
+						Privacy notice<span class="sr-only"> (opens in a new tab)</span>
+					</a>
+					<a href={ templ.SafeURL(noticeTermsHref) } target="_blank" rel="noopener" class={ noticeLink }>
+						Terms of service<span class="sr-only"> (opens in a new tab)</span>
+					</a>
+				</span>
+			</p>
+		</div>
+	</aside>
+}
+
+const noticeLink = "font-medium text-primary underline underline-offset-4 rounded-sm hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+
+templ assessmentLockIcon(className string) {
+	<svg xmlns="http://www.w3.org/2000/svg" class={ className } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="3" y="11" width="18" height="11" rx="2"></rect>
+		<path d="M7 11V7a5 5 0 0110 0v4"></path>
+	</svg>
+}
+
+templ assessmentShieldIcon(className string) {
+	<svg xmlns="http://www.w3.org/2000/svg" class={ className } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+	</svg>
+}

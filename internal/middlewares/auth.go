@@ -3,11 +3,11 @@ package middlewares
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/Francesco99975/shorehamex2/internal/auth"
+	"github.com/Francesco99975/shorehamex2/internal/database"
 	"github.com/Francesco99975/shorehamex2/internal/enums"
 	"github.com/Francesco99975/shorehamex2/internal/httperr"
 	"github.com/Francesco99975/shorehamex2/internal/repository"
@@ -44,11 +44,6 @@ func (m *AuthMiddlewares) AuthMiddleware() echo.MiddlewareFunc {
 				return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 			}
 
-			err = m.repo.SetActorID(c.Request().Context(), auser.ID)
-			if err != nil {
-				return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to set actor id: %w", err))
-			}
-
 			auth.TouchSession(c.Request(), m.repo, auser.SessionID, auser.LastActivityAt)
 
 			slog.Debug("Authenticated user", slog.String("username", auser.Username))
@@ -56,6 +51,7 @@ func (m *AuthMiddlewares) AuthMiddleware() echo.MiddlewareFunc {
 			c.Request().Header.Set("X-Request-ID", auser.ID)
 
 			ctx := context.WithValue(c.Request().Context(), UserKey, auser.ID)
+			ctx = database.WithActor(ctx, auser.ID)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}

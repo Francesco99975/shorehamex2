@@ -222,7 +222,7 @@ func GetDefaultSite(r *http.Request, routePath string) Site {
 	}
 
 	return Site{
-		AppName:  "ShorehamEX",
+		AppName:  "Casa Medica Examinations",
 		Title:    meta.Title,
 		Metatags: SEO{Description: meta.Description, Keywords: "", Author: "Francesco Michele Barranca <kalairen>", Canonical: canonical, Robots: robots},
 		Year:     time.Now().Year(),

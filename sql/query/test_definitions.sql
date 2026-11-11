@@ -40,6 +40,9 @@
 SELECT * FROM test_definitions
 WHERE code = $1;
 
+-- name: GetTestCodesAndItems :many
+SELECT code, item_count FROM test_definitions;
+
 -- name: ListTestDefinitions :many
 SELECT
   td.*,

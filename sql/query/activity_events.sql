@@ -34,19 +34,6 @@ SELECT log_activity_event(
     sqlc.arg(event_type), sqlc.arg(patient_id), sqlc.arg(assignment_id), sqlc.arg(metadata)
 );
 
--- name: ListRecentActivity :many
--- Dashboard-wide "Recent activity" feed, most recent first.
-SELECT
-    e.*,
-    p.full_name AS patient_name,
-    u.full_name AS actor_name
-FROM activity_events e
-LEFT JOIN patients p ON p.id = e.patient_id
-LEFT JOIN users u ON u.id = e.actor_id
-WHERE e.is_developer_data = is_developer_user(sqlc.arg(viewer_id))
-ORDER BY e.created_at DESC
-LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
-
 -- name: ListActivityForPatient :many
 -- One patient's timeline (patient detail view), most recent first.
 SELECT
@@ -70,3 +57,77 @@ LEFT JOIN users u ON u.id = e.actor_id
 WHERE e.assignment_id = $1
   AND e.is_developer_data = is_developer_user(sqlc.arg(viewer_id))
 ORDER BY e.created_at DESC;
+
+-- name: ListRecentActivity :many
+-- One row per user-visible action, newest first.
+--
+-- Events written by the same transaction share created_at (now() is fixed per
+-- transaction) and examination_id, so they are collapsed into one action:
+--   EXAMINATION_CREATED + N×ASSIGNMENT_CREATED + LINK_SENT -> REMOTE_SENT
+--   ASSIGNMENT_STARTED + ASSIGNMENT_READY_FOR_REVIEW       -> TEST_FINISHED
+--   ASSIGNMENT_COMPLETED + ASSIGNMENT_REVIEWED             -> TEST_REVIEWED
+-- Events without an examination (PATIENT_CREATED) stay on their own.
+--
+-- Only the newest 100 raw events are scanned (idx_activity_events_created_at),
+-- which is far more than 5 actions need.
+WITH recent AS (
+    SELECT ev.*
+    FROM activity_events ev
+    WHERE sqlc.narg(viewer_id)::uuid IS NULL
+       OR ev.is_developer_data = is_developer_user(sqlc.narg(viewer_id)::uuid)
+    ORDER BY ev.created_at DESC
+    LIMIT 100
+),
+grouped AS (
+    SELECT
+        ((array_agg(r.id ORDER BY r.id))[1])::uuid                                     AS id,
+        r.created_at,
+        (array_agg(r.examination_id) FILTER (WHERE r.examination_id IS NOT NULL))[1]   AS examination_id,
+        (array_agg(r.patient_id)     FILTER (WHERE r.patient_id     IS NOT NULL))[1]   AS patient_id,
+        (array_agg(r.assignment_id)  FILTER (
+            WHERE r.assignment_id IS NOT NULL AND r.event_type <> 'ASSIGNMENT_CREATED'
+        ))[1]                                                                          AS assignment_id,
+        (array_agg(r.actor_id)       FILTER (WHERE r.actor_id       IS NOT NULL))[1]   AS actor_id,
+        array_agg(r.event_type)                                                        AS event_types,
+        array_agg(r.metadata->>'testCode' ORDER BY (r.metadata->>'sequence')::int)
+            FILTER (WHERE r.event_type = 'ASSIGNMENT_CREATED')                         AS created_tests,
+        max(r.metadata->>'mode')                                                       AS meta_mode,
+        max(r.metadata->>'mrn')                                                        AS meta_mrn
+    FROM recent r
+    GROUP BY r.created_at, COALESCE(r.examination_id, r.id)
+    ORDER BY r.created_at DESC
+    LIMIT sqlc.arg(row_limit)::int
+)
+SELECT
+    g.id::uuid AS id,
+    (CASE
+        WHEN 'EXAMINATION_CREATED' = ANY(g.event_types)
+         AND COALESCE(e.mode::text, g.meta_mode) = 'REMOTE'          THEN 'REMOTE_SENT'
+        WHEN 'EXAMINATION_CREATED' = ANY(g.event_types)              THEN 'CLINIC_STARTED'
+        WHEN 'ASSIGNMENT_REVIEWED' = ANY(g.event_types)
+          OR 'ASSIGNMENT_COMPLETED' = ANY(g.event_types)             THEN 'TEST_REVIEWED'
+        WHEN 'ASSIGNMENT_READY_FOR_REVIEW' = ANY(g.event_types)      THEN 'TEST_FINISHED'
+        WHEN 'ASSIGNMENT_STARTED' = ANY(g.event_types)               THEN 'TEST_STARTED'
+        WHEN 'ASSIGNMENT_CREATED' = ANY(g.event_types)               THEN 'TESTS_ASSIGNED'
+        WHEN 'LINK_SENT' = ANY(g.event_types)                        THEN 'LINK_SENT'
+        WHEN 'PATIENT_CREATED' = ANY(g.event_types)                  THEN 'PATIENT_ADDED'
+        ELSE 'OTHER'
+    END)::text                                                       AS kind,
+    (g.event_types[1])::text                                         AS raw_type,
+    COALESCE(u.username, '')::text                                   AS actor_username,
+    COALESCE(g.actor_id = sqlc.narg(viewer_id)::uuid, FALSE)::bool   AS actor_is_viewer,
+    COALESCE(p.full_name, g.meta_mrn, '')::text                      AS patient_name,
+    g.patient_id::uuid                                               AS patient_id,
+    g.examination_id::uuid                                           AS examination_id,
+    COALESCE(
+        g.created_tests,
+        CASE WHEN a.test_code IS NULL THEN '{}'::text[] ELSE ARRAY[a.test_code::text] END
+    )::text[]                                                        AS tests,
+    COALESCE(e.mode::text, g.meta_mode, '')::text                    AS mode,
+    g.created_at
+FROM grouped g
+LEFT JOIN users        u ON u.id = g.actor_id
+LEFT JOIN patients     p ON p.id = g.patient_id
+LEFT JOIN examinations e ON e.id = g.examination_id
+LEFT JOIN assignments  a ON a.id = g.assignment_id
+ORDER BY g.created_at DESC;

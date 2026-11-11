@@ -144,41 +144,103 @@ func (q *Queries) ListActivityForPatient(ctx context.Context, arg ListActivityFo
 }
 
 const listRecentActivity = `-- name: ListRecentActivity :many
+WITH recent AS (
+    SELECT ev.id, ev.event_type, ev.patient_id, ev.assignment_id, ev.actor_id, ev.is_developer_data, ev.metadata, ev.created_at, ev.examination_id
+    FROM activity_events ev
+    WHERE $1::uuid IS NULL
+       OR ev.is_developer_data = is_developer_user($1::uuid)
+    ORDER BY ev.created_at DESC
+    LIMIT 100
+),
+grouped AS (
+    SELECT
+        ((array_agg(r.id ORDER BY r.id))[1])::uuid                                     AS id,
+        r.created_at,
+        (array_agg(r.examination_id) FILTER (WHERE r.examination_id IS NOT NULL))[1]   AS examination_id,
+        (array_agg(r.patient_id)     FILTER (WHERE r.patient_id     IS NOT NULL))[1]   AS patient_id,
+        (array_agg(r.assignment_id)  FILTER (
+            WHERE r.assignment_id IS NOT NULL AND r.event_type <> 'ASSIGNMENT_CREATED'
+        ))[1]                                                                          AS assignment_id,
+        (array_agg(r.actor_id)       FILTER (WHERE r.actor_id       IS NOT NULL))[1]   AS actor_id,
+        array_agg(r.event_type)                                                        AS event_types,
+        array_agg(r.metadata->>'testCode' ORDER BY (r.metadata->>'sequence')::int)
+            FILTER (WHERE r.event_type = 'ASSIGNMENT_CREATED')                         AS created_tests,
+        max(r.metadata->>'mode')                                                       AS meta_mode,
+        max(r.metadata->>'mrn')                                                        AS meta_mrn
+    FROM recent r
+    GROUP BY r.created_at, COALESCE(r.examination_id, r.id)
+    ORDER BY r.created_at DESC
+    LIMIT $2::int
+)
 SELECT
-    e.id, e.event_type, e.patient_id, e.assignment_id, e.actor_id, e.is_developer_data, e.metadata, e.created_at, e.examination_id,
-    p.full_name AS patient_name,
-    u.full_name AS actor_name
-FROM activity_events e
-LEFT JOIN patients p ON p.id = e.patient_id
-LEFT JOIN users u ON u.id = e.actor_id
-WHERE e.is_developer_data = is_developer_user($1)
-ORDER BY e.created_at DESC
-LIMIT $3 OFFSET $2
+    g.id::uuid AS id,
+    (CASE
+        WHEN 'EXAMINATION_CREATED' = ANY(g.event_types)
+         AND COALESCE(e.mode::text, g.meta_mode) = 'REMOTE'          THEN 'REMOTE_SENT'
+        WHEN 'EXAMINATION_CREATED' = ANY(g.event_types)              THEN 'CLINIC_STARTED'
+        WHEN 'ASSIGNMENT_REVIEWED' = ANY(g.event_types)
+          OR 'ASSIGNMENT_COMPLETED' = ANY(g.event_types)             THEN 'TEST_REVIEWED'
+        WHEN 'ASSIGNMENT_READY_FOR_REVIEW' = ANY(g.event_types)      THEN 'TEST_FINISHED'
+        WHEN 'ASSIGNMENT_STARTED' = ANY(g.event_types)               THEN 'TEST_STARTED'
+        WHEN 'ASSIGNMENT_CREATED' = ANY(g.event_types)               THEN 'TESTS_ASSIGNED'
+        WHEN 'LINK_SENT' = ANY(g.event_types)                        THEN 'LINK_SENT'
+        WHEN 'PATIENT_CREATED' = ANY(g.event_types)                  THEN 'PATIENT_ADDED'
+        ELSE 'OTHER'
+    END)::text                                                       AS kind,
+    (g.event_types[1])::text                                         AS raw_type,
+    COALESCE(u.username, '')::text                                   AS actor_username,
+    COALESCE(g.actor_id = $1::uuid, FALSE)::bool   AS actor_is_viewer,
+    COALESCE(p.full_name, g.meta_mrn, '')::text                      AS patient_name,
+    g.patient_id::uuid                                               AS patient_id,
+    g.examination_id::uuid                                           AS examination_id,
+    COALESCE(
+        g.created_tests,
+        CASE WHEN a.test_code IS NULL THEN '{}'::text[] ELSE ARRAY[a.test_code::text] END
+    )::text[]                                                        AS tests,
+    COALESCE(e.mode::text, g.meta_mode, '')::text                    AS mode,
+    g.created_at
+FROM grouped g
+LEFT JOIN users        u ON u.id = g.actor_id
+LEFT JOIN patients     p ON p.id = g.patient_id
+LEFT JOIN examinations e ON e.id = g.examination_id
+LEFT JOIN assignments  a ON a.id = g.assignment_id
+ORDER BY g.created_at DESC
 `
 
 type ListRecentActivityParams struct {
-	ViewerID  uuid.UUID `json:"viewer_id"`
-	RowOffset int32     `json:"row_offset"`
-	RowLimit  int32     `json:"row_limit"`
+	ViewerID *uuid.UUID `json:"viewer_id"`
+	RowLimit int32      `json:"row_limit"`
 }
 
 type ListRecentActivityRow struct {
-	ID              uuid.UUID          `json:"id"`
-	EventType       string             `json:"event_type"`
-	PatientID       *uuid.UUID         `json:"patient_id"`
-	AssignmentID    *uuid.UUID         `json:"assignment_id"`
-	ActorID         *uuid.UUID         `json:"actor_id"`
-	IsDeveloperData bool               `json:"is_developer_data"`
-	Metadata        []byte             `json:"metadata"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	ExaminationID   *uuid.UUID         `json:"examination_id"`
-	PatientName     *string            `json:"patient_name"`
-	ActorName       *string            `json:"actor_name"`
+	ID            uuid.UUID          `json:"id"`
+	Kind          string             `json:"kind"`
+	RawType       string             `json:"raw_type"`
+	ActorUsername string             `json:"actor_username"`
+	ActorIsViewer bool               `json:"actor_is_viewer"`
+	PatientName   string             `json:"patient_name"`
+	PatientID     uuid.UUID          `json:"patient_id"`
+	ExaminationID uuid.UUID          `json:"examination_id"`
+	Tests         []string           `json:"tests"`
+	Mode          string             `json:"mode"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-// Dashboard-wide "Recent activity" feed, most recent first.
+// One row per user-visible action, newest first.
+//
+// Events written by the same transaction share created_at (now() is fixed per
+// transaction) and examination_id, so they are collapsed into one action:
+//
+//	EXAMINATION_CREATED + N×ASSIGNMENT_CREATED + LINK_SENT -> REMOTE_SENT
+//	ASSIGNMENT_STARTED + ASSIGNMENT_READY_FOR_REVIEW       -> TEST_FINISHED
+//	ASSIGNMENT_COMPLETED + ASSIGNMENT_REVIEWED             -> TEST_REVIEWED
+//
+// Events without an examination (PATIENT_CREATED) stay on their own.
+//
+// Only the newest 100 raw events are scanned (idx_activity_events_created_at),
+// which is far more than 5 actions need.
 func (q *Queries) ListRecentActivity(ctx context.Context, arg ListRecentActivityParams) ([]*ListRecentActivityRow, error) {
-	rows, err := q.db.Query(ctx, listRecentActivity, arg.ViewerID, arg.RowOffset, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listRecentActivity, arg.ViewerID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -188,16 +250,16 @@ func (q *Queries) ListRecentActivity(ctx context.Context, arg ListRecentActivity
 		var i ListRecentActivityRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.EventType,
-			&i.PatientID,
-			&i.AssignmentID,
-			&i.ActorID,
-			&i.IsDeveloperData,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.ExaminationID,
+			&i.Kind,
+			&i.RawType,
+			&i.ActorUsername,
+			&i.ActorIsViewer,
 			&i.PatientName,
-			&i.ActorName,
+			&i.PatientID,
+			&i.ExaminationID,
+			&i.Tests,
+			&i.Mode,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

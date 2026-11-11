@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/mail"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/Francesco99975/shorehamex2/internal/enums"
@@ -44,7 +45,7 @@ func (p *AssignPayload) DateToTime() time.Time {
 	return t
 }
 
-func (p *AssignPayload) Validate() error {
+func (p *AssignPayload) Validate(priorityMap []*repository.GetTestCodesAndItemsRow) error {
 	if p.PatientID == "" {
 		return errors.New("patient ID is required")
 	}
@@ -62,8 +63,20 @@ func (p *AssignPayload) Validate() error {
 		return errors.New("invalid mode")
 	}
 
-	return nil
+	// Build code -> item count lookup
+	itemCounts := make(map[string]int16, len(priorityMap))
+	for _, row := range priorityMap {
+		if row != nil {
+			itemCounts[row.Code] = row.ItemCount
+		}
+	}
 
+	// Ascending by item count; stable keeps the original order for ties
+	sort.SliceStable(p.Instruments, func(i, j int) bool {
+		return itemCounts[p.Instruments[i]] < itemCounts[p.Instruments[j]]
+	})
+
+	return nil
 }
 
 type AddPatientPayload struct {

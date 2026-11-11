@@ -172,10 +172,51 @@ func Dashboard() echo.HandlerFunc {
 
 		slog.Debug("viewWeeklyCompletition", "viewWeeklyCompletition", viewWeeklyCompletition)
 
+		recentActivity, err := repo.ListRecentActivity(ctx, repository.ListRecentActivityParams{
+			ViewerID: &userUUID,
+			RowLimit: 5,
+		})
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
+		clinicLoc, err := time.LoadLocation("America/Toronto")
+		if err != nil {
+			return herr.HandleEchoPage(http.StatusInternalServerError, err)
+		}
+
+		out := make([]dashboard.Activity, 0, len(recentActivity))
+		for _, r := range recentActivity {
+			a := dashboard.Activity{
+				ID:            r.ID.String(),
+				Kind:          dashboard.ActivityKind(r.Kind),
+				RawType:       r.RawType,
+				Actor:         r.ActorUsername,
+				ActorIsViewer: r.ActorIsViewer,
+				Patient:       r.PatientName,
+				Tests:         r.Tests,
+				Mode:          r.Mode,
+				At:            r.CreatedAt.Time,
+			}
+			switch {
+			case r.ExaminationID.String() != "":
+				a.Href = "/examinations/" + r.ExaminationID.String()
+			case r.PatientID.String() != "":
+				a.Href = "/patients/" + r.PatientID.String()
+			}
+			out = append(out, a)
+		}
+
+		recentActivityProps := dashboard.RecentActivityProps{
+			Entries: out,
+			Now:     time.Now().In(clinicLoc),
+		}
+
 		props := views.DashboardPageProps{
 			Counts:    viewCounts,
 			Attention: viewAttentionItems,
 			Weekly:    viewWeeklyCompletition,
+			Activity:  recentActivityProps,
 		}
 
 		html := helpers.MustRenderHTML(views.DashboardPage(data, props))

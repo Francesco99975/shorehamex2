@@ -24,6 +24,7 @@ import (
 	"github.com/Francesco99975/shorehamex2/views"
 	"github.com/Francesco99975/shorehamex2/views/assignments"
 	"github.com/Francesco99975/shorehamex2/views/components"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -242,9 +243,6 @@ func Assign() echo.HandlerFunc {
 		if err := c.Bind(&payload); err != nil {
 			return herr.Handle(c.Response(), http.StatusBadRequest, err)
 		}
-		if err := payload.Validate(); err != nil {
-			return herr.Handle(c.Response(), http.StatusBadRequest, err)
-		}
 
 		ctx := c.Request().Context()
 		tx, err := database.Pool().BeginTx(ctx, pgx.TxOptions{})
@@ -254,6 +252,15 @@ func Assign() echo.HandlerFunc {
 		defer database.HandleTransaction(ctx, tx, &err)
 
 		repo := repository.New(tx)
+
+		priorityMap, err := repo.GetTestCodesAndItems(ctx)
+		if err != nil {
+			return herr.Handle(c.Response(), http.StatusInternalServerError, fmt.Errorf("failed to get priorities: %v", err))
+		}
+
+		if err := payload.Validate(priorityMap); err != nil {
+			return herr.Handle(c.Response(), http.StatusBadRequest, err)
+		}
 
 		auser, err := auth.GetActiveSession(c.Request(), repo)
 		if err != nil {
@@ -698,6 +705,16 @@ func StartExamination() echo.HandlerFunc {
 		}
 
 		data := config.GetDefaultSite(c.Request(), c.Path())
+		if examination.Mode == repository.AssignmentModeINCLINIC {
+			user, err := auth.GetActiveSession(c.Request(), repo)
+			if err != nil && user != nil {
+				return herr.HandleEchoPage(http.StatusInternalServerError, err)
+			}
+			if user == nil {
+				return c.Redirect(http.StatusSeeOther, "/auth")
+			}
+			data.CurrentUser = user
+		}
 
 		data.Nonce = c.Get("nonce").(string)
 		data.CSRF = c.Get("csrf").(string)
@@ -714,7 +731,20 @@ func StartExamination() echo.HandlerFunc {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load asq definition: %w", err))
 				}
 
-				html := helpers.MustRenderHTML(assignments.Asq(data, definition.Content.Questions, definition.Content.Multiq, fmt.Sprintf("/examinating/asq/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.Asq(
+					data,
+					definition.Content.Questions,
+					definition.Content.Multiq,
+					fmt.Sprintf("/examinating/asq/%s?token=%s", assignment.ID.String(), token),
+				)
+
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
 
 				return c.Blob(http.StatusOK, "text/html", html)
 
@@ -723,42 +753,92 @@ func StartExamination() echo.HandlerFunc {
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load bai definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.Bai(data, definition.Content.Questions, fmt.Sprintf("/examinating/bai/%s?token=%s", assignment.ID.String(), token)))
+
+				page := assignments.Bai(data, definition.Content.Questions, fmt.Sprintf("/examinating/bai/%s?token=%s", assignment.ID.String(), token))
+
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.BDI.String():
 				definition, err := models.LoadBdiDefinition(assignmentTest.SourcePath)
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load bdi definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.Bdi(data, definition.Content.Questions, fmt.Sprintf("/examinating/bdi/%s?token=%s", assignment.ID.String(), token)))
+
+				page := assignments.Bdi(data, definition.Content.Questions, fmt.Sprintf("/examinating/bdi/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.P3.String():
 				definition, err := models.LoadP3Definition(assignmentTest.SourcePath)
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load p3 definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.P3(data, definition.Content.Questions, fmt.Sprintf("/examinating/p3/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.P3(data, definition.Content.Questions, fmt.Sprintf("/examinating/p3/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.DASS42.String():
 				definition, err := models.LoadDass42Definition(assignmentTest.SourcePath)
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load dass42 definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.Dass42(data, definition.Content.Questions, fmt.Sprintf("/examinating/dass42/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.Dass42(data, definition.Content.Questions, fmt.Sprintf("/examinating/dass42/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.BDI2.String():
 				definition, err := models.LoadBDI2Definition(assignmentTest.SourcePath)
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load BDI-II definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.BDI2(data, definition.Content.Topics, fmt.Sprintf("/examinating/bdi2/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.BDI2(data, definition.Content.Topics, fmt.Sprintf("/examinating/bdi2/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.PSTD.String():
 				definition, err := models.LoadPTSDDefinition(assignmentTest.SourcePath)
 				if err != nil {
 					return herr.HandleEchoPage(http.StatusInternalServerError, fmt.Errorf("load ptsd definition: %w", err))
 				}
-				html := helpers.MustRenderHTML(assignments.PTSD(data, definition.Content.Questions, fmt.Sprintf("/examinating/ptsd/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.PTSD(data, definition.Content.Questions, fmt.Sprintf("/examinating/ptsd/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			case enums.TestCodes.MMPI2.String():
 				definition, err := models.LoadMMPIDefinition(assignmentTest.SourcePath)
@@ -779,7 +859,15 @@ func StartExamination() echo.HandlerFunc {
 				}
 
 				paginatedQuestions := definition.Content.Questions[startIndex:endIndex]
-				html := helpers.MustRenderHTML(assignments.MMPI(data, paginatedQuestions, int(assignment.Page), fmt.Sprintf("/examinating/mmpi2/%s?token=%s", assignment.ID.String(), token)))
+				page := assignments.MMPI(data, paginatedQuestions, int(assignment.Page), fmt.Sprintf("/examinating/mmpi2/%s?token=%s", assignment.ID.String(), token))
+				if examination.Mode == repository.AssignmentModeINCLINIC {
+					page = views.WithLayout(layouts.ClinicalAssessmentLayout, data, page)
+				} else {
+					page = views.WithLayout(layouts.RemoteAssessmentLayout, data, page)
+				}
+
+				html := helpers.MustRenderHTML(page)
+
 				return c.Blob(http.StatusOK, "text/html", html)
 			default:
 				return herr.HandleEchoPage(http.StatusNotFound, fmt.Errorf("test not found"))

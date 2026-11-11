@@ -1029,6 +1029,8 @@ func PTSDCalc() echo.HandlerFunc {
 				return herr.Handle(c.Response(), http.StatusBadRequest, fmt.Errorf("invalid answer: %w", err))
 			}
 
+			slog.Debug("Answer", slog.Int("asw", asw))
+
 			switch asw {
 			case 1:
 				responses[ptsdDefinition.Content.Questions[i]] = "Not at all"

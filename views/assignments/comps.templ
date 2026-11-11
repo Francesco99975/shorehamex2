@@ -1,0 +1,485 @@
+package assignments
+
+import (
+	"strconv"
+
+	"github.com/Francesco99975/shorehamex2/internal/config"
+	"github.com/Francesco99975/shorehamex2/views/layouts"
+	"github.com/Francesco99975/shorehamex2/views/ui"
+)
+
+// ChoiceOption is one selectable answer. Value is submitted verbatim, so it
+// must match what the scoring handler expects for that test.
+type ChoiceOption struct {
+	Label string
+	Value string
+}
+
+// OptionsFromLabels turns a list of labels into options valued
+// offset, offset+1, … (BDI uses offset 0, P3 uses offset 1).
+func OptionsFromLabels(labels []string, offset int) []ChoiceOption {
+	opts := make([]ChoiceOption, len(labels))
+	for i, l := range labels {
+		opts[i] = ChoiceOption{Label: l, Value: strconv.Itoa(i + offset)}
+	}
+	return opts
+}
+
+var (
+	YesNoOptions     = [2]ChoiceOption{{Label: "Yes", Value: "1"}, {Label: "No", Value: "0"}}
+	TrueFalseOptions = [2]ChoiceOption{{Label: "True", Value: "1"}, {Label: "False", Value: "0"}}
+)
+
+// Option ids only need to be unique on the page; they are never submitted.
+func optionID(name string, i int) string {
+	return name + "-opt" + strconv.Itoa(i)
+}
+
+const (
+	tileBase = "flex min-w-0 cursor-pointer gap-3 rounded-xl border border-border bg-background px-4 py-3 text-fg " +
+		"transition-colors motion-reduce:transition-none hover:border-primary/50 " +
+		"has-[:checked]:border-primary has-[:checked]:bg-primary/10 " +
+		"has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-panel"
+
+	radioBase = "size-5 shrink-0 cursor-pointer appearance-none rounded-full border-2 border-muted/60 bg-background " +
+		"transition-all motion-reduce:transition-none checked:border-[6px] checked:border-primary focus-visible:outline-none"
+
+	progressBase = "h-2 w-full appearance-none overflow-hidden rounded-full bg-border " +
+		"[&::-webkit-progress-bar]:bg-border [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary " +
+		"[&::-webkit-progress-value]:transition-all [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary"
+)
+
+// ─── Page shell ──────────────────────────────────────────────────────────────
+
+type TestShellProps struct {
+	Eyebrow       string // small label above the title, e.g. "Questionnaire"
+	Title         string
+	Subtitle      string
+	QuestionCount int // 0 hides the count chip
+}
+
+// TestShell wraps a test page: base layout, a narrow reading column and the
+// progress script. Put the test <form> in its children.
+templ TestShell(site config.Site, p TestShellProps) {
+	@layouts.Base(site) {
+		<main class="w-full min-h-dvh">
+			<div class="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-24 pt-6 sm:gap-8 sm:px-6 sm:pt-12">
+				<header class="flex flex-col gap-3">
+					if p.Eyebrow != "" {
+						<p class="text-xs font-semibold uppercase tracking-widest text-primary">{ p.Eyebrow }</p>
+					}
+					<h1 class="text-2xl font-bold leading-tight text-fg text-balance sm:text-4xl">{ p.Title }</h1>
+					if p.Subtitle != "" {
+						<p class="text-base leading-relaxed text-muted text-pretty">{ p.Subtitle }</p>
+					}
+					if p.QuestionCount > 0 {
+						<p class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 text-sm text-muted">
+							@listIcon("size-4")
+							<span><span class="font-semibold text-fg tabular-nums">{ strconv.Itoa(p.QuestionCount) }</span> questions</span>
+						</p>
+					}
+				</header>
+				{ children... }
+			</div>
+		</main>
+		@testFormScript(site.Nonce)
+	}
+}
+
+// Instructions is the callout that explains how to answer.
+templ Instructions(text string) {
+	<section aria-label="Instructions" class="flex gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
+		@infoIcon("mt-0.5 size-5 shrink-0 text-primary")
+		<p class="min-w-0 text-base leading-relaxed text-fg text-pretty">{ text }</p>
+	</section>
+}
+
+// ─── Progress ────────────────────────────────────────────────────────────────
+
+type TestProgressProps struct {
+	Total int    // number of radio questions in this form/page
+	Label string // accessible name for the bar, e.g. "Questions answered"
+}
+
+// TestProgress is a sticky bar at the top of the form. It counts answered
+// questions (radio groups marked data-q) and offers a jump to the next
+// unanswered one. Must be rendered inside a form[data-test-form].
+templ TestProgress(p TestProgressProps) {
+	<div class="sticky top-0 z-20 -mx-4 flex flex-col gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+		<div class="flex items-center justify-between gap-3">
+			<p class="text-sm text-muted" aria-live="polite">
+				<span class="font-semibold text-fg tabular-nums" data-progress-count>0</span>
+				of <span class="tabular-nums">{ strconv.Itoa(p.Total) }</span> answered
+			</p>
+			<span data-next-wrap>
+				<button
+					type="button"
+					data-next-unanswered
+					class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+				>
+					Next unanswered
+					@chevronDownIcon("size-4")
+				</button>
+			</span>
+		</div>
+		<progress
+			data-progress-bar
+			value="0"
+			max={ strconv.Itoa(p.Total) }
+			aria-label={ nonEmptyLabel(p.Label, "Questions answered") }
+			class={ progressBase }
+		></progress>
+	</div>
+}
+
+type PageStepperProps struct {
+	Page       int
+	TotalPages int
+}
+
+// PageStepper shows where a multi-page test (MMPI-2) is overall.
+templ PageStepper(p PageStepperProps) {
+	<div class="flex flex-col gap-2 rounded-2xl border border-border bg-panel p-4">
+		<div class="flex items-baseline justify-between gap-3">
+			<p class="text-sm font-semibold text-fg">
+				Page <span class="tabular-nums">{ strconv.Itoa(p.Page) }</span>
+				<span class="font-normal text-muted">of <span class="tabular-nums">{ strconv.Itoa(p.TotalPages) }</span></span>
+			</p>
+			<p class="text-xs text-muted tabular-nums">{ strconv.Itoa(pagePercent(p.Page, p.TotalPages)) }% of the test done</p>
+		</div>
+		<progress
+			value={ strconv.Itoa(p.Page - 1) }
+			max={ strconv.Itoa(p.TotalPages) }
+			aria-label="Overall test progress"
+			class={ progressBase }
+		></progress>
+	</div>
+}
+
+func pagePercent(page, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	return (page - 1) * 100 / total
+}
+
+func nonEmptyLabel(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+// ─── Question card ────────────────────────────────────────────��──────────────
+
+type QuestionCardProps struct {
+	Number int    // 1-based, shown in the badge
+	Prompt string // the question or statement
+	Hint   string // optional helper text under the prompt
+}
+
+// QuestionCard is a fieldset for one question. The number badge turns into a
+// check once any answer inside it is selected. Put one *Choices component in
+// its children.
+templ QuestionCard(p QuestionCardProps) {
+	<fieldset data-question class="group/q min-w-0 scroll-mt-28 rounded-2xl border border-border bg-panel p-4 shadow-sm transition-colors motion-reduce:transition-none has-[:checked]:border-primary/40 sm:p-6">
+		<legend class="sr-only">Question { strconv.Itoa(p.Number) }: { p.Prompt }</legend>
+		<div class="mb-4 flex items-start gap-3" aria-hidden="true">
+			<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary tabular-nums transition-colors group-has-[:checked]/q:bg-primary group-has-[:checked]/q:text-primary-fg">
+				<span class="group-has-[:checked]/q:hidden">{ strconv.Itoa(p.Number) }</span>
+				@checkIcon("hidden size-4 group-has-[:checked]/q:block")
+			</span>
+			<div class="flex min-w-0 flex-col gap-1 pt-1">
+				<p class="text-base font-medium leading-relaxed text-fg text-pretty sm:text-lg">{ p.Prompt }</p>
+				if p.Hint != "" {
+					<p class="text-sm text-muted">{ p.Hint }</p>
+				}
+			</div>
+		</div>
+		{ children... }
+	</fieldset>
+}
+
+// ─── Answer controls ─────────────────────────────────────────────────────────
+
+type ScaleChoicesProps struct {
+	Name     string
+	Options  []ChoiceOption // ordered from least to most intense
+	Required bool
+	Columns  int // 1 (stacked), 2 or 5 columns from the sm breakpoint up
+}
+
+func scaleGridClass(cols int) string {
+	switch cols {
+	case 2:
+		return "grid grid-cols-1 gap-2 sm:grid-cols-2"
+	case 5:
+		return "grid grid-cols-1 gap-2 sm:grid-cols-5"
+	}
+	return "grid grid-cols-1 gap-2"
+}
+
+// ScaleChoices renders a severity/frequency scale. Each tile carries a small
+// intensity meter so the order of the options reads at a glance.
+templ ScaleChoices(p ScaleChoicesProps) {
+	<div class={ scaleGridClass(p.Columns) }>
+		for i, opt := range p.Options {
+			<label
+				for={ optionID(p.Name, i) }
+				class={
+					"group/opt", tileBase, "items-center",
+					templ.KV("sm:flex-col sm:justify-center sm:px-2 sm:py-4 sm:text-center", p.Columns == 5),
+				}
+			>
+				<input
+					type="radio"
+					id={ optionID(p.Name, i) }
+					name={ p.Name }
+					value={ opt.Value }
+					required?={ p.Required }
+					data-q
+					class={ radioBase }
+				/>
+				<span class="min-w-0 flex-1 text-base leading-snug">{ opt.Label }</span>
+				<span aria-hidden="true" class={ "flex h-4 shrink-0 items-end gap-0.5", templ.KV("sm:h-4", p.Columns == 5) }>
+					for _, bar := range meterBars(i+1, len(p.Options)) {
+						<span
+							class={
+								"w-1 rounded-full", bar.Height,
+								templ.KV("bg-muted/50 group-has-[:checked]/opt:bg-primary", bar.Filled),
+								templ.KV("bg-border", !bar.Filled),
+							}
+						></span>
+					}
+				</span>
+			</label>
+		}
+	</div>
+}
+
+type meterBar struct {
+	Height string
+	Filled bool
+}
+
+var meterHeights = [...]string{"h-1.5", "h-2", "h-2.5", "h-3", "h-3.5", "h-4"}
+
+func meterBars(level, levels int) []meterBar {
+	bars := make([]meterBar, levels)
+	for i := range bars {
+		h := meterHeights[len(meterHeights)-1]
+		if i < len(meterHeights) {
+			h = meterHeights[i]
+		}
+		bars[i] = meterBar{Height: h, Filled: i < level}
+	}
+	return bars
+}
+
+type StatementChoicesProps struct {
+	Name     string
+	Options  []ChoiceOption
+	Required bool
+}
+
+// StatementChoices stacks long statements (BDI, BDI-II, P3) as full-width
+// tiles so they wrap comfortably on small screens.
+templ StatementChoices(p StatementChoicesProps) {
+	<div class="flex flex-col gap-2">
+		for i, opt := range p.Options {
+			<label for={ optionID(p.Name, i) } class={ tileBase, "items-start" }>
+				<input
+					type="radio"
+					id={ optionID(p.Name, i) }
+					name={ p.Name }
+					value={ opt.Value }
+					required?={ p.Required }
+					data-q
+					class={ radioBase, "mt-0.5" }
+				/>
+				<span class="min-w-0 text-base leading-relaxed text-pretty">{ opt.Label }</span>
+			</label>
+		}
+	</div>
+}
+
+type BinaryChoicesProps struct {
+	Name     string
+	Options  [2]ChoiceOption // YesNoOptions or TrueFalseOptions
+	Required bool
+}
+
+// BinaryChoices is a two-button choice (Yes/No, True/False), side by side on
+// every screen size with large tap targets.
+templ BinaryChoices(p BinaryChoicesProps) {
+	<div class="grid grid-cols-2 gap-3">
+		for i, opt := range p.Options {
+			<label for={ optionID(p.Name, i) } class={ tileBase, "items-center justify-center py-4" }>
+				<input
+					type="radio"
+					id={ optionID(p.Name, i) }
+					name={ p.Name }
+					value={ opt.Value }
+					required?={ p.Required }
+					data-q
+					class={ radioBase }
+				/>
+				<span class="text-base font-semibold sm:text-lg">{ opt.Label }</span>
+			</label>
+		}
+	</div>
+}
+
+// ChecklistSection is an optional "select all that apply" group.
+templ ChecklistSection(title string, hint string) {
+	<fieldset class="flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-panel p-4 shadow-sm sm:p-6">
+		<legend class="sr-only">{ title }</legend>
+		<div class="flex flex-col gap-1" aria-hidden="true">
+			<p class="text-base font-semibold leading-relaxed text-fg text-pretty sm:text-lg">{ title }</p>
+			if hint != "" {
+				<p class="text-sm text-muted">{ hint }</p>
+			}
+		</div>
+		<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+			{ children... }
+		</div>
+	</fieldset>
+}
+
+// CheckTile is a checkbox tile. The checkbox's id doubles as its name, as
+// the original SimpleCheckboxInput did.
+templ CheckTile(id string, label string) {
+	<label for={ id } class={ tileBase, "items-start" }>
+		<span class="relative mt-0.5 flex size-5 shrink-0">
+			<input
+				type="checkbox"
+				id={ id }
+				name={ id }
+				class="peer size-5 cursor-pointer appearance-none rounded-md border-2 border-muted/60 bg-background transition-colors checked:border-primary checked:bg-primary focus-visible:outline-none"
+			/>
+			@checkIcon("pointer-events-none absolute inset-0 m-auto size-3.5 text-primary-fg opacity-0 peer-checked:opacity-100")
+		</span>
+		<span class="min-w-0 text-base leading-snug">{ label }</span>
+	</label>
+}
+
+// ─── Submit ───────────────────────────────────────────────────────────��──────
+
+// SubmitSection closes the form. Children are the button content
+// (use SubmitCheckIcon / SubmitArrowIcon next to the text).
+templ SubmitSection(hint string) {
+	<div class="flex flex-col gap-3 rounded-2xl border border-border bg-panel p-4 sm:p-6">
+		if hint != "" {
+			<p class="text-sm leading-relaxed text-muted text-pretty">{ hint }</p>
+		}
+		@ui.Button(ui.ButtonProps{
+			Variant: ui.ButtonPrimary,
+			Size:    ui.ButtonLG,
+			Type:    ui.TypeSubmit,
+			FullW:   true,
+		}) {
+			{ children... }
+		}
+	</div>
+}
+
+templ SubmitCheckIcon() {
+	@checkIcon("size-5")
+}
+
+templ SubmitArrowIcon() {
+	<svg class="size-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+		<path d="M5 12h14M13 6l6 6-6 6"></path>
+	</svg>
+}
+
+// ─── Icons ───────────────────────────────────────────────────────────────────
+
+templ checkIcon(className string) {
+	<svg class={ className } aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+		<path d="M5 13l4 4L19 7"></path>
+	</svg>
+}
+
+templ infoIcon(className string) {
+	<svg class={ className } aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+		<circle cx="12" cy="12" r="9"></circle>
+		<path d="M12 11v5M12 8h.01"></path>
+	</svg>
+}
+
+templ listIcon(className string) {
+	<svg class={ className } aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+		<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"></path>
+	</svg>
+}
+
+templ chevronDownIcon(className string) {
+	<svg class={ className } aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+		<path d="M6 9l6 6 6-6"></path>
+	</svg>
+}
+
+// ─── Behaviour ───────────────────────────────────────────────────────────────
+
+// testFormScript drives TestProgress. Listeners are delegated to document so
+// they survive htmx swaps (MMPI pages swap the form's contents in place).
+templ testFormScript(nonce string) {
+	<script nonce={ nonce }>
+(function () {
+	if (window.__testFormProgress) return;
+	window.__testFormProgress = true;
+
+	function update(form) {
+		var groups = {};
+		form.querySelectorAll('input[type="radio"][data-q]').forEach(function (input) {
+			groups[input.name] = groups[input.name] || input.checked;
+		});
+		var names = Object.keys(groups);
+		var done = names.filter(function (n) { return groups[n]; }).length;
+		form.querySelectorAll('[data-progress-count]').forEach(function (el) { el.textContent = done; });
+		form.querySelectorAll('[data-progress-bar]').forEach(function (el) { el.value = done; });
+		form.querySelectorAll('[data-next-wrap]').forEach(function (el) {
+			el.classList.toggle('hidden', names.length > 0 && done === names.length);
+		});
+	}
+
+	function initAll() {
+		document.querySelectorAll('form[data-test-form]').forEach(update);
+	}
+
+	document.addEventListener('change', function (e) {
+		var form = e.target.closest && e.target.closest('form[data-test-form]');
+		if (form) update(form);
+	});
+
+	document.addEventListener('click', function (e) {
+		var btn = e.target.closest && e.target.closest('[data-next-unanswered]');
+		if (!btn) return;
+		var form = btn.closest('form');
+		var cards = form ? form.querySelectorAll('[data-question]') : [];
+		for (var i = 0; i < cards.length; i++) {
+			if (!cards[i].querySelector('input:checked')) {
+				var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+				cards[i].scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+				var first = cards[i].querySelector('input');
+				if (first) first.focus({ preventScroll: true });
+				return;
+			}
+		}
+	});
+
+	document.addEventListener('htmx:afterSwap', function (e) {
+		initAll();
+		var t = e.detail && e.detail.target;
+		if (t && t.matches && t.matches('form[data-test-form]')) window.scrollTo(0, 0);
+	});
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initAll);
+	} else {
+		initAll();
+	}
+})();
+	</script>
+}

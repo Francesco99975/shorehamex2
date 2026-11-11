@@ -26,6 +26,7 @@ type DashboardPageProps struct {
 	Stats     []dashboard.StatCardProps // overrides Counts when non-empty
 	Attention []dashboard.AttentionItemProps
 	Weekly    dashboard.WeeklyCompletionProps
+	Activity  dashboard.RecentActivityProps
 }
 
 func (p DashboardPageProps) stats() []dashboard.StatCardProps {
@@ -75,6 +76,7 @@ templ DashboardPage(site config.Site, p DashboardPageProps) {
 						@dashboard.WeeklyCompletion(p.Weekly)
 					</div>
 				</div>
+				@dashboard.RecentActivity(p.Activity)
 			</div>
 		</main>
 	}

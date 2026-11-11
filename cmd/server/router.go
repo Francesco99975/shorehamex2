@@ -153,6 +153,8 @@ Sitemap: %s/sitemap.xml
 	am := middlewares.NewAuthMiddlewares(repository.New(database.Pool()))
 
 	web.GET("/", controllers.Index())
+	web.GET("/privacy", controllers.PrivacyPolicy())
+	web.GET("/terms", controllers.Terms())
 	web.GET("/auth", controllers.Auth())
 	web.POST("auth/2fa/check", controllers.SessionLoginTwoFACheck())
 	web.GET("/auth/2fa/reset", controllers.TwoFAResetForm())

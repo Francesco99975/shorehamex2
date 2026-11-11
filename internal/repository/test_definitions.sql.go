@@ -120,6 +120,35 @@ func (q *Queries) DeleteTestDefinition(ctx context.Context, code string) error {
 	return err
 }
 
+const getTestCodesAndItems = `-- name: GetTestCodesAndItems :many
+SELECT code, item_count FROM test_definitions
+`
+
+type GetTestCodesAndItemsRow struct {
+	Code      string `json:"code"`
+	ItemCount int16  `json:"item_count"`
+}
+
+func (q *Queries) GetTestCodesAndItems(ctx context.Context) ([]*GetTestCodesAndItemsRow, error) {
+	rows, err := q.db.Query(ctx, getTestCodesAndItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*GetTestCodesAndItemsRow
+	for rows.Next() {
+		var i GetTestCodesAndItemsRow
+		if err := rows.Scan(&i.Code, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTestDefinition = `-- name: GetTestDefinition :one
 
 SELECT code, name, domain, scoring_method, requires_sex, item_count, typical_duration_minutes, is_active, source_path, source_checksum, version, created_at, updated_at FROM test_definitions

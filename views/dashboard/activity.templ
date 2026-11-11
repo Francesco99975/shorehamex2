@@ -1,0 +1,297 @@
+package dashboard
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Francesco99975/shorehamex2/views/icons"
+)
+
+// ActivityKind values match the `kind` column of ListRecentActivity.
+type ActivityKind string
+
+const (
+	ActivityPatientAdded  ActivityKind = "PATIENT_ADDED"
+	ActivityRemoteSent    ActivityKind = "REMOTE_SENT"
+	ActivityClinicStarted ActivityKind = "CLINIC_STARTED"
+	ActivityTestsAssigned ActivityKind = "TESTS_ASSIGNED"
+	ActivityLinkSent      ActivityKind = "LINK_SENT"
+	ActivityTestStarted   ActivityKind = "TEST_STARTED"
+	ActivityTestFinished  ActivityKind = "TEST_FINISHED"
+	ActivityTestReviewed  ActivityKind = "TEST_REVIEWED"
+	ActivityOther         ActivityKind = "OTHER"
+)
+
+// Activity is one row of the feed. Every kind uses the same fields;
+// the sentence is chosen by Kind.
+type Activity struct {
+	ID            string
+	Kind          ActivityKind
+	RawType       string   // original event_type, used for OTHER
+	Actor         string   // username; "" = the patient or the system
+	ActorIsViewer bool     // render "You"
+	Patient       string   // full name, or MRN if the patient was deleted
+	Tests         []string // test codes in sequence order
+	Mode          string   // "REMOTE" | "IN_CLINIC" | ""
+	Href          string   // examination or patient page; "" = not a link
+	At            time.Time
+}
+
+type RecentActivityProps struct {
+	Entries     []Activity
+	Now         time.Time // time.Now() in the clinic's location
+	ViewAllHref string    // optional
+}
+
+templ RecentActivity(p RecentActivityProps) {
+	<section aria-labelledby="activity-heading" class="bg-panel border border-border rounded-xl min-w-0">
+		@PanelHeader("activity-heading", "Recent activity", "", true) {
+			if p.ViewAllHref != "" {
+				<a href={ templ.SafeURL(p.ViewAllHref) } class="text-sm font-medium text-primary hover:underline whitespace-nowrap">View all</a>
+			}
+		}
+		if len(p.Entries) == 0 {
+			<p class="p-8 text-center text-sm text-muted text-pretty">No activity yet. New patients, examinations and results will appear here.</p>
+		} else {
+			<ol class="divide-y divide-[color:var(--color-border)]">
+				for _, a := range p.Entries {
+					@ActivityRow(a, p.Now)
+				}
+			</ol>
+		}
+	</section>
+}
+
+// ActivityRow: time sits under the sentence on mobile, right-aligned on sm+.
+templ ActivityRow(a Activity, now time.Time) {
+	<li class="flex items-start gap-3 p-4 text-sm">
+		<span aria-hidden="true" class={ "w-8 h-8 shrink-0 rounded-lg grid place-content-center", iconClass(a.Kind) }>
+			@ActivityIcon(a.Kind)
+		</span>
+		<div class="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-x-3 gap-y-0.5 pt-1.5 sm:pt-0 sm:min-h-8">
+			<p class="flex-1 min-w-0 text-pretty leading-relaxed break-words">
+				if a.Href != "" {
+					<a href={ templ.SafeURL(a.Href) } class="hover:underline underline-offset-4 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+						@ActivitySentence(a)
+					</a>
+				} else {
+					@ActivitySentence(a)
+				}
+			</p>
+			<time
+				datetime={ a.At.UTC().Format(time.RFC3339) }
+				title={ a.At.In(nowLocation(now)).Format("Jan 2, 2006 · 15:04") }
+				class="text-xs text-muted whitespace-nowrap"
+			>
+				{ RelativeTime(now, a.At) }
+			</time>
+		</div>
+	</li>
+}
+
+templ ActivitySentence(a Activity) {
+	switch a.Kind {
+		case ActivityPatientAdded:
+			@actorName(a)
+			{ " added new patient " }
+			@bold(patientOr(a))
+			{ "." }
+		case ActivityRemoteSent:
+			@actorName(a)
+			{ " sent a remote examination" }
+			@testList(a.Tests, " (", ")")
+			{ " to " }
+			@bold(patientOr(a))
+			{ "." }
+		case ActivityClinicStarted:
+			@actorName(a)
+			{ " opened an in-clinic examination for " }
+			@bold(patientOr(a))
+			@testList(a.Tests, " (", ")")
+			{ "." }
+		case ActivityTestsAssigned:
+			@actorName(a)
+			{ " assigned" }
+			@testList(a.Tests, " ", "")
+			{ " to " }
+			@bold(patientOr(a))
+			{ "." }
+		case ActivityLinkSent:
+			@actorName(a)
+			{ " resent the examination link to " }
+			@bold(patientOr(a))
+			{ "." }
+		case ActivityTestStarted:
+			@bold(patientOr(a))
+			{ " started " }
+			@bold(firstTest(a))
+			{ modeSuffix(a.Mode) + "." }
+		case ActivityTestFinished:
+			@bold(patientOr(a))
+			{ " completed " }
+			@bold(firstTest(a))
+			{ modeSuffix(a.Mode) + "." }
+		case ActivityTestReviewed:
+			@actorName(a)
+			{ " reviewed " }
+			@bold(firstTest(a))
+			{ " for " }
+			@bold(patientOr(a))
+			{ "." }
+		default:
+			{ humanize(a.RawType) + "." }
+	}
+}
+
+templ actorName(a Activity) {
+	if a.ActorIsViewer {
+		You
+	} else if a.Actor != "" {
+		@bold(a.Actor)
+	} else {
+		A clinician
+	}
+}
+
+templ bold(s string) {
+	<b class="font-semibold text-fg">{ s }</b>
+}
+
+// testList shows up to two codes in bold, then "+N more".
+templ testList(codes []string, prefix, suffix string) {
+	if len(codes) > 0 {
+		{ prefix }
+		for i, c := range shownTests(codes) {
+			if i > 0 {
+				{ ", " }
+			}
+			@bold(c)
+		}
+		if len(codes) > 2 {
+			{ fmt.Sprintf(" +%d more", len(codes)-2) }
+		}
+		{ suffix }
+	}
+}
+
+func shownTests(codes []string) []string {
+	if len(codes) > 2 {
+		return codes[:2]
+	}
+	return codes
+}
+
+func firstTest(a Activity) string {
+	if len(a.Tests) > 0 {
+		return a.Tests[0]
+	}
+	return "a test"
+}
+
+func patientOr(a Activity) string {
+	if a.Patient != "" {
+		return a.Patient
+	}
+	return "a patient"
+}
+
+func modeSuffix(mode string) string {
+	switch mode {
+	case "REMOTE":
+		return " remotely"
+	case "IN_CLINIC":
+		return " in clinic"
+	default:
+		return ""
+	}
+}
+
+func humanize(s string) string {
+	s = strings.ToLower(strings.ReplaceAll(s, "_", " "))
+	if s == "" {
+		return "Activity"
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// RelativeTime: "Just now", "12m ago", "3h ago" (today), "Yesterday",
+// weekday within the last week, then "Jan 2" / "Jan 2, 2006".
+func RelativeTime(now, t time.Time) string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	t = t.In(now.Location())
+	d := now.Sub(t)
+	if d < 0 {
+		d = 0
+	}
+	y, m, day := now.Date()
+	today := time.Date(y, m, day, 0, 0, 0, 0, now.Location())
+	switch {
+	case d < time.Minute:
+		return "Just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case !t.Before(today):
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case !t.Before(today.AddDate(0, 0, -1)):
+		return "Yesterday"
+	case !t.Before(today.AddDate(0, 0, -6)):
+		return t.Format("Monday")
+	case t.Year() == now.Year():
+		return t.Format("Jan 2")
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
+func nowLocation(now time.Time) *time.Location {
+	if now.IsZero() {
+		return time.Local
+	}
+	return now.Location()
+}
+
+func iconClass(k ActivityKind) string {
+	if k == ActivityTestFinished {
+		return "bg-primary/10 text-primary"
+	}
+	return "bg-std text-muted"
+}
+
+templ ActivityIcon(k ActivityKind) {
+	switch k {
+		case ActivityPatientAdded:
+			@icons.UsersIcon("w-4 h-4")
+		case ActivityRemoteSent, ActivityLinkSent:
+			@sendIcon("w-4 h-4")
+		case ActivityTestStarted:
+			@playIcon("w-4 h-4")
+		case ActivityTestFinished:
+			@icons.CheckIcon("w-4 h-4")
+		case ActivityClinicStarted, ActivityTestsAssigned, ActivityTestReviewed:
+			@icons.Copy("w-4 h-4")
+		default:
+			@dotIcon("w-4 h-4")
+	}
+}
+
+templ sendIcon(className string) {
+	<svg xmlns="http://www.w3.org/2000/svg" class={ className } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M22 2 11 13"></path>
+		<path d="M22 2 15 22l-4-9-9-4 20-7z"></path>
+	</svg>
+}
+
+templ playIcon(className string) {
+	<svg xmlns="http://www.w3.org/2000/svg" class={ className } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<polygon points="6 3 20 12 6 21 6 3"></polygon>
+	</svg>
+}
+
+templ dotIcon(className string) {
+	<svg xmlns="http://www.w3.org/2000/svg" class={ className } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<circle cx="12" cy="12" r="3"></circle>
+	</svg>
+}

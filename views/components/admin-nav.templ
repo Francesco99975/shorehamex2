@@ -78,6 +78,20 @@ templ AsideAdminNav(site config.Site) {
 			@ui.DrawerNav(ui.UserNavLinks...)
 		}
 
+		<nav aria-label="Legal" class="mt-auto px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+			<a
+				href="/privacy"
+				class="text-xs text-muted hover:text-fg underline-offset-4 hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+			>
+				Privacy Policy
+			</a>
+			<a
+				href="/terms"
+				class="text-xs text-muted hover:text-fg underline-offset-4 hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+			>
+				Terms of Service
+			</a>
+		</nav>
 
 		<div class="p-3 border-t border-border">
 			<div class="flex items-center gap-3 px-2 py-2">
@@ -98,7 +112,6 @@ templ AsideAdminNav(site config.Site) {
 					@submit="mobileMenuOpen = false"
 				>
 					@ui.IconButton(ui.ButtonProps{
-
 						Variant: ui.ButtonDanger,
 						Type:    "submit",
 						FullW:   true,

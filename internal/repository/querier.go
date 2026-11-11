@@ -379,6 +379,7 @@ type Querier interface {
 	// joins straight from assignment_id to the envelope and the display
 	// fields, no need to look up assignment_result_id first.
 	GetSumBandResultsForAssignment(ctx context.Context, arg GetSumBandResultsForAssignmentParams) ([]*GetSumBandResultsForAssignmentRow, error)
+	GetTestCodesAndItems(ctx context.Context) ([]*GetTestCodesAndItemsRow, error)
 	// test_definitions.sql
 	//
 	// sqlc queries for the test_definitions table (the instrument catalog).
@@ -513,7 +514,17 @@ type Querier interface {
 	// e.g. everything currently READY_FOR_REVIEW, for a "needs your
 	// attention" view.
 	ListPatientsByStatus(ctx context.Context, arg ListPatientsByStatusParams) ([]*Patient, error)
-	// Dashboard-wide "Recent activity" feed, most recent first.
+	// One row per user-visible action, newest first.
+	//
+	// Events written by the same transaction share created_at (now() is fixed per
+	// transaction) and examination_id, so they are collapsed into one action:
+	//   EXAMINATION_CREATED + N×ASSIGNMENT_CREATED + LINK_SENT -> REMOTE_SENT
+	//   ASSIGNMENT_STARTED + ASSIGNMENT_READY_FOR_REVIEW       -> TEST_FINISHED
+	//   ASSIGNMENT_COMPLETED + ASSIGNMENT_REVIEWED             -> TEST_REVIEWED
+	// Events without an examination (PATIENT_CREATED) stay on their own.
+	//
+	// Only the newest 100 raw events are scanned (idx_activity_events_created_at),
+	// which is far more than 5 actions need.
 	ListRecentActivity(ctx context.Context, arg ListRecentActivityParams) ([]*ListRecentActivityRow, error)
 	ListRemindersForExamination(ctx context.Context, arg ListRemindersForExaminationParams) ([]*AssignmentReminder, error)
 	ListRemoteAccessTokensForExamination(ctx context.Context, arg ListRemoteAccessTokensForExaminationParams) ([]*RemoteAccessToken, error)

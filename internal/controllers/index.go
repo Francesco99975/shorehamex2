@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	_ "time/tzdata"
+
 	"github.com/Francesco99975/shorehamex2/internal/auth"
 	"github.com/Francesco99975/shorehamex2/internal/config"
 	"github.com/Francesco99975/shorehamex2/internal/database"

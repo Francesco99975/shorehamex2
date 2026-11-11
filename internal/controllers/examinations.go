@@ -463,7 +463,7 @@ func RemindRemoteExamination() echo.HandlerFunc {
 		}
 
 		if examination.RemoteToken == nil {
-			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("No remote token found"))
+			return herr.Handle(c.Response(), http.StatusNotFound, errors.New("no remote token found"))
 		}
 
 		var remoteLink string

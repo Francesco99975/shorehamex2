@@ -66,14 +66,14 @@ func GetTestCodeFromString(code string) TestCode {
 	}
 }
 
-func isTestCodeValid(code string) bool {
-	switch strings.ToUpper(code) {
-	case string(asq), string(bai), string(bdi), string(p3), string(dass42), string(bdi2), string(ptsd), string(mmpi2):
-		return true
-	default:
-		return false
-	}
-}
+// func isTestCodeValid(code string) bool {
+// 	switch strings.ToUpper(code) {
+// 	case string(asq), string(bai), string(bdi), string(p3), string(dass42), string(bdi2), string(ptsd), string(mmpi2):
+// 		return true
+// 	default:
+// 		return false
+// 	}
+// }
 
 type test_domain string
 

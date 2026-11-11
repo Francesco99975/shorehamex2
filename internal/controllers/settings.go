@@ -819,7 +819,7 @@ func CreateUser() echo.HandlerFunc {
 
 		helpers.ResendEmailVerificationTemplate(createdUser.Email, ev.Token)
 
-		var userStatus string = "Inactive"
+		userStatus := "Inactive"
 		if createdUser.IsActive {
 			userStatus = "Active"
 		}
@@ -932,7 +932,7 @@ func UpdateUser() echo.HandlerFunc {
 			}
 		}
 
-		var userStatus string = "Inactive"
+		userStatus := "Inactive"
 		if updatedUser.IsActive {
 			userStatus = "Active"
 		}

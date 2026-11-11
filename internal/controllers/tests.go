@@ -104,7 +104,7 @@ func UploadTest() echo.HandlerFunc {
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
-		defer src.Close()
+		defer func() { _ = src.Close() }()
 
 		data, err := io.ReadAll(src)
 		if err != nil {
@@ -126,7 +126,7 @@ func UploadTest() echo.HandlerFunc {
 		if err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
-		defer dst.Close()
+		defer func() { _ = dst.Close() }()
 
 		if _, err := dst.Write(data); err != nil {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)

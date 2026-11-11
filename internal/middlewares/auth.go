@@ -15,9 +15,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const (
-	UserKey string = "user_id"
-)
+type ctxKey string
+
+const UserKey ctxKey = "user_id"
 
 type AuthMiddlewares struct {
 	repo *repository.Queries

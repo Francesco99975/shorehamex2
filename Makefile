@@ -7,7 +7,7 @@ endif
 # Project configuration
 PROJECT_NAME := shorehamex2
 DB_CONTAINER := shorehamex2db
-DB_USER := Francesco99975
+DB_USER := kalairen
 DB_HOST := localhost
 DB_NAME := shorehamex2db
 SERVER_STAGING := Francesco99975@staging.com

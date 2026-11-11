@@ -81,8 +81,8 @@ func ExaminationDetail() echo.HandlerFunc {
 			return herr.HandleEchoPage(http.StatusInternalServerError, err)
 		}
 
-		var assignments []results.AssignmentRowProps = make([]results.AssignmentRowProps, 0, len(examinationsAssignments))
-		var steps []results.ProgressStep = make([]results.ProgressStep, 0, len(examinationsAssignments))
+		assignments := make([]results.AssignmentRowProps, 0, len(examinationsAssignments))
+		steps := make([]results.ProgressStep, 0, len(examinationsAssignments))
 		for _, assignment := range examinationsAssignments {
 			assignments = append(assignments, results.AssignmentRowProps{
 				ID:          assignment.ID.String(),
@@ -410,7 +410,7 @@ func DownloadResults() echo.HandlerFunc {
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
-			defer os.Remove(file)
+			defer func() { _ = os.Remove(file) }()
 
 			return c.Attachment(file, file)
 		} else {
@@ -445,7 +445,7 @@ func DownloadResults() echo.HandlerFunc {
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 			}
-			defer os.Remove(file)
+			defer func() { _ = os.Remove(file) }()
 
 			return c.Attachment(file, file)
 

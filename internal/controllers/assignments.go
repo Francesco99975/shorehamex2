@@ -105,7 +105,7 @@ func AsqCalc() echo.HandlerFunc {
 		duration := int(time.Since(startTime).Milliseconds())
 
 		var score int
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range asqDefinition.MaxScore {
 
@@ -150,7 +150,7 @@ func AsqCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		assignmentResult, err := repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
+		_, err = repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
 			AssignmentID: assignment.ID,
 			NewResponses: responsesRawJson,
 		})
@@ -174,7 +174,7 @@ func AsqCalc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		assignmentResult, err := repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -257,7 +257,7 @@ func BaiCalc() echo.HandlerFunc {
 		duration := int(time.Since(startTime).Milliseconds())
 
 		var score int
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range 21 {
 
@@ -300,7 +300,7 @@ func BaiCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		assignmentResult, err := repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
+		_, err = repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
 			AssignmentID: assignment.ID,
 			NewResponses: responsesRawJson,
 		})
@@ -324,7 +324,7 @@ func BaiCalc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		assignmentResult, err := repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -408,7 +408,7 @@ func BdiCalc() echo.HandlerFunc {
 		duration := int(time.Since(startTime).Milliseconds())
 
 		var score int
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range 11 {
 
@@ -441,7 +441,7 @@ func BdiCalc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		assignmentResult, err := repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
+		_, err = repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
 			AssignmentID: assignment.ID,
 			NewResponses: responsesRawJson,
 		})
@@ -465,7 +465,7 @@ func BdiCalc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		assignmentResult, err := repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -551,7 +551,7 @@ func P3Calc() echo.HandlerFunc {
 		duration := int(time.Since(startTime).Milliseconds())
 
 		var score int
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range 44 {
 
@@ -586,7 +586,7 @@ func P3Calc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		assignmentResult, err := repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
+		_, err = repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
 			AssignmentID: assignment.ID,
 			NewResponses: responsesRawJson,
 		})
@@ -610,7 +610,7 @@ func P3Calc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		assignmentResult, err := repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -693,7 +693,7 @@ func DASS42Calc() echo.HandlerFunc {
 
 		duration := int(time.Since(startTime).Milliseconds())
 
-		var scores map[string]*models.SubResult = make(map[string]*models.SubResult, len(dass42Definition.Subscales))
+		scores := make(map[string]*models.SubResult, len(dass42Definition.Subscales))
 		for _, subscale := range dass42Definition.Subscales {
 			scores[subscale.Code] = &models.SubResult{
 				Score:      0,
@@ -703,7 +703,7 @@ func DASS42Calc() echo.HandlerFunc {
 			}
 		}
 
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range dass42Definition.Items {
 
@@ -797,7 +797,7 @@ func DASS42Calc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		_, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -903,7 +903,7 @@ func BDI2Calc() echo.HandlerFunc {
 			return herr.Handle(c.Response(), http.StatusInternalServerError, err)
 		}
 
-		assignmentResult, err := repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
+		_, err = repo.UpdateAssignmentResponses(ctx, repository.UpdateAssignmentResponsesParams{
 			AssignmentID: assignment.ID,
 			NewResponses: responsesRawJson,
 		})
@@ -926,7 +926,7 @@ func BDI2Calc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		assignmentResult, err := repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),
@@ -1010,7 +1010,7 @@ func PTSDCalc() echo.HandlerFunc {
 
 		duration := int(time.Since(startTime).Milliseconds())
 
-		var scores map[string]*models.SubResult = make(map[string]*models.SubResult, len(ptsdDefinition.Subscales))
+		scores := make(map[string]*models.SubResult, len(ptsdDefinition.Subscales))
 		for _, subscale := range ptsdDefinition.Subscales {
 			scores[subscale.Code] = &models.SubResult{
 				Score:      0 - subscale.Adjust,
@@ -1020,7 +1020,7 @@ func PTSDCalc() echo.HandlerFunc {
 			}
 		}
 
-		var responses map[string]string = make(map[string]string)
+		responses := make(map[string]string)
 
 		for i := range ptsdDefinition.Items {
 
@@ -1126,7 +1126,7 @@ func PTSDCalc() echo.HandlerFunc {
 			)
 		}
 
-		assignmentResult, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
+		_, err = repo.FinalizeAssignmentResultScoring(ctx, repository.FinalizeAssignmentResultScoringParams{
 			AssignmentID:    assignmentUUID,
 			RawScores:       rawScoresJSON,
 			DurationSeconds: new(int32(duration / 1000)),

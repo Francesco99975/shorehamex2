@@ -81,16 +81,16 @@ func floatsToJS(xs []float64) string {
 
 // firstRune returns the upper-cased first rune of s, or fallback if s is empty.
 // Used by HeaderBrand to derive a one-letter logo glyph from the app title.
-func firstRune(s string, fallback rune) rune {
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' {
-			return r - 32
-		} else {
-			return r
-		}
-	}
-	return fallback
-}
+// func firstRune(s string, fallback rune) rune {
+// 	for _, r := range s {
+// 		if r >= 'a' && r <= 'z' {
+// 			return r - 32
+// 		} else {
+// 			return r
+// 		}
+// 	}
+// 	return fallback
+// }
 
 // repeat returns s concatenated n times. Used for input placeholders such as
 // the OTPSingle "000000" dots that scale with Length.

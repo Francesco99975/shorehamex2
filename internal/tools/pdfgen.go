@@ -93,7 +93,7 @@ func GeneratePDFGeneric(
 	for _, band := range sumBands {
 		m.AddRows(
 			text.NewRow(25,
-				fmt.Sprintf("%s", band.SubscaleCode),
+				band.SubscaleCode,
 				props.Text{
 					Top:   3,
 					Style: fontstyle.Bold,

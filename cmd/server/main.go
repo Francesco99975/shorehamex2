@@ -31,11 +31,6 @@ func main() {
 		log.Fatalf("Failed to load Vite manifest: %v", err)
 	}
 
-	// Create a root ctx and a CancelFunc which can be used to cancel retentionMap goroutine
-	rootCtx := context.Background()
-	ctx, cancel := context.WithCancel(rootCtx)
-	defer cancel()
-
 	port := boot.Environment.Port
 
 	database.Setup(boot.Environment.DSN)
@@ -102,7 +97,7 @@ func main() {
 	signal.Notify(quit, os.Interrupt)
 	<-quit
 	helpers.Notify("shorehamex2", "Server is shutting down")
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := e.Shutdown(ctx); err != nil {
 		helpers.Notify("shorehamex2", fmt.Sprintf("Server forced to shutdown: %v", err))

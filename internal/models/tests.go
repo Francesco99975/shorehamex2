@@ -513,7 +513,7 @@ func calculateTScore(rawScore int32, scale Scale, sex enums.Sex, results *MMPIRe
 }
 
 func (cr *MMPICategoryResult) deriveIndications(scalesData []MMPIScale, currentResults *MMPIResults) {
-	var indres []string = make([]string, 0)
+	indres := make([]string, 0)
 
 	for _, sr := range cr.Scales {
 		var indications Indications

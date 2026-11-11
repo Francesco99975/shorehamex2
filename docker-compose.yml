@@ -1,5 +1,5 @@
 services:
-  shorexdb:
+  shorehamex2db:
     container_name: shorehamex2db
     image: postgres:15.3-alpine
     restart: unless-stopped
@@ -23,11 +23,11 @@ services:
       - shorehamex2pgconf:/etc/postgresql
       - shorehamex2pglog:/var/log/postgresql
   shorehamex2:
-    container_name: shorexdb
-    image: shorexdb
+    container_name: shorehamex2
+    image: shorehamex2
     restart: unless-stopped
     depends_on:
-      shorexdb:
+      shorehamex2db:
         condition: service_healthy
     environment:
       - GO_ENV

@@ -1,7 +1,7 @@
 # -----------------------------
 # 1. Build Phase
 # -----------------------------
-FROM golang:1.26.8-alpine3.24 AS build
+FROM golang:1.27.3-alpine AS build
 
 # Install all tools needed for client + Go + templ
 RUN apk --no-cache add gcc g++ make git nodejs npm bash

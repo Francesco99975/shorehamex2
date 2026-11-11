@@ -1,6 +1,6 @@
 services:
-  shorehamex2db:
-    container_name: shorehamex2db
+  shorexdb:
+    container_name: shorexdb
     image: postgres:15.3-alpine
     restart: unless-stopped
     healthcheck:
@@ -27,7 +27,7 @@ services:
     image: shorehamex2
     restart: unless-stopped
     depends_on:
-      shorehamex2db:
+      shorexdb:
         condition: service_healthy
     environment:
       - GO_ENV

@@ -9,7 +9,6 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/prometheus/client_golang v1.24.0
-	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.28.0
 	go.uber.org/zap/exp v0.3.0
